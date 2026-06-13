@@ -1,7 +1,13 @@
 import { Resend } from 'resend'
 import type { NotificationPayload } from './types'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+let _resend: Resend | null = null
+function getResend(): Resend {
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY)
+  }
+  return _resend
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -46,7 +52,7 @@ export async function sendEmailNotification(
   payload: NotificationPayload
 ): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: process.env.RESEND_FROM_EMAIL || 'Poolendar <noreply@poolendar.com>',
       to,
       subject: payload.title,
