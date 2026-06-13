@@ -61,7 +61,8 @@ function parseRRule(rrule: string | null): {
   const result = { ...defaults }
 
   for (const part of parts) {
-    const [key, val] = part.split('=')
+    const [key, val] = part.split('=') as [string, string | undefined]
+    if (!val) continue
     switch (key) {
       case 'FREQ':
         if (['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(val)) {

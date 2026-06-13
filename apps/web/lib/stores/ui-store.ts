@@ -77,8 +77,8 @@ interface UIState {
   closeEditForm: () => void
   setEditFormTab: (tab: 'event' | 'task' | 'routine') => void
   openContextMenu: (
-    itemId: string,
-    itemType: 'event' | 'task' | 'routine',
+    itemId: string | null,
+    itemType: 'event' | 'task' | 'routine' | null,
     position: { x: number; y: number }
   ) => void
   closeContextMenu: () => void

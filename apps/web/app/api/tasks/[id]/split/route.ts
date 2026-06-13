@@ -74,92 +74,90 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const parentDuration = task.time_estimate_minutes
     const n = subtasks!.length
 
-    for (const subtask of subtasks!) {
-      const estimate = subtask.time_estimate_minutes
-        ?? (parentDuration ? Math.round(parentDuration / n) : null)
+    // Collect all child task rows for batch insert
+    const childRows = subtasks!.map((subtask) => ({
+      user_id: userId,
+      parent_id: id,
+      calendar_id: task.calendar_id,
+      title: subtask.title,
+      notes: null as string | null,
+      importance: task.importance,
+      time_estimate_minutes: subtask.time_estimate_minutes
+        ?? (parentDuration ? Math.round(parentDuration / n) : null),
+      earliest_start: task.earliest_start,
+      due_date: task.due_date,
+      status: subtask.completed ? 'done' : task.status,
+      board: task.board,
+      visibility: task.visibility,
+      privacy: task.privacy,
+      flexibility: task.flexibility,
+      reminders: task.reminders,
+      completed_at: subtask.completed ? new Date().toISOString() : null,
+      position: subtask.position,
+    }))
 
-      const childRow = {
-        user_id: userId,
-        parent_id: id,
-        calendar_id: task.calendar_id,
-        title: subtask.title,
-        notes: null as string | null,
-        importance: task.importance,
-        time_estimate_minutes: estimate,
-        earliest_start: task.earliest_start,
-        due_date: task.due_date,
-        status: subtask.completed ? 'done' : task.status,
-        board: task.board,
-        visibility: task.visibility,
-        privacy: task.privacy,
-        flexibility: task.flexibility,
-        reminders: task.reminders,
-        completed_at: subtask.completed ? new Date().toISOString() : null,
-        position: subtask.position,
-      }
+    const { data: children, error: childError } = await supabase
+      .from('tasks')
+      .insert(childRows)
+      .select()
 
-      const { data: child, error: childError } = await supabase
-        .from('tasks')
-        .insert(childRow)
-        .select()
-        .single()
-
-      if (childError || !child) {
-        return NextResponse.json({ error: 'Failed to create child task' }, { status: 500 })
-      }
-
-      if (tagIds.length > 0) {
-        await supabase
-          .from('task_tags')
-          .insert(tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId })))
-      }
-
-      childTasks.push(child)
+    if (childError || !children) {
+      return NextResponse.json({ error: 'Failed to create child tasks' }, { status: 500 })
     }
+
+    // Batch tag associations if parent had tags
+    if (tagIds.length > 0) {
+      const tagRows = children.flatMap((child: any) =>
+        tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId }))
+      )
+      await supabase.from('task_tags').insert(tagRows)
+    }
+
+    childTasks.push(...children)
 
     await supabase.from('subtasks').delete().eq('task_id', id)
   } else {
     const n = chunks!
     const perChunk = Math.round(task.time_estimate_minutes! / n)
 
-    for (let i = 0; i < n; i++) {
-      const childRow = {
-        user_id: userId,
-        parent_id: id,
-        calendar_id: task.calendar_id,
-        title: `${task.title} (${i + 1}/${n})`,
-        notes: null as string | null,
-        importance: task.importance,
-        time_estimate_minutes: perChunk,
-        earliest_start: task.earliest_start,
-        due_date: task.due_date,
-        status: task.status,
-        board: task.board,
-        visibility: task.visibility,
-        privacy: task.privacy,
-        flexibility: task.flexibility,
-        reminders: task.reminders,
-        position: i + 1.0,
-      }
+    // Collect all chunk rows for batch insert
+    const chunkRows = Array.from({ length: n }, (_, i) => ({
+      user_id: userId,
+      parent_id: id,
+      calendar_id: task.calendar_id,
+      title: `${task.title} (${i + 1}/${n})`,
+      notes: null as string | null,
+      importance: task.importance,
+      time_estimate_minutes: perChunk,
+      earliest_start: task.earliest_start,
+      due_date: task.due_date,
+      status: task.status,
+      board: task.board,
+      visibility: task.visibility,
+      privacy: task.privacy,
+      flexibility: task.flexibility,
+      reminders: task.reminders,
+      position: i + 1.0,
+    }))
 
-      const { data: child, error: childError } = await supabase
-        .from('tasks')
-        .insert(childRow)
-        .select()
-        .single()
+    const { data: children, error: childError } = await supabase
+      .from('tasks')
+      .insert(chunkRows)
+      .select()
 
-      if (childError || !child) {
-        return NextResponse.json({ error: 'Failed to create child task' }, { status: 500 })
-      }
-
-      if (tagIds.length > 0) {
-        await supabase
-          .from('task_tags')
-          .insert(tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId })))
-      }
-
-      childTasks.push(child)
+    if (childError || !children) {
+      return NextResponse.json({ error: 'Failed to create child tasks' }, { status: 500 })
     }
+
+    // Batch tag associations if parent had tags
+    if (tagIds.length > 0) {
+      const tagRows = children.flatMap((child: any) =>
+        tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId }))
+      )
+      await supabase.from('task_tags').insert(tagRows)
+    }
+
+    childTasks.push(...children)
   }
 
   const { data: updatedParent, error: updateError } = await supabase

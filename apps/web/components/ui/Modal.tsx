@@ -100,8 +100,8 @@ function Modal({
         return
       }
 
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
 
       if (e.shiftKey) {
         if (document.activeElement === first) {
@@ -120,7 +120,7 @@ function Modal({
 
     const focusable = getFocusableElements()
     if (focusable.length > 0) {
-      focusable[0].focus()
+      focusable[0]!.focus()
     } else {
       contentRef.current?.focus()
     }

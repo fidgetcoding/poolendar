@@ -64,7 +64,7 @@ export function KanbanColumn({
 
   return (
     <div
-      className="flex flex-col min-w-[280px] max-w-[340px] w-full shrink-0 rounded-xl transition-colors duration-200"
+      className="flex flex-col min-w-[85vw] md:min-w-[280px] max-w-none md:max-w-[340px] w-full shrink-0 snap-center rounded-xl transition-colors duration-200"
       style={{
         backgroundColor: isOver
           ? 'rgba(249, 168, 37, 0.04)'

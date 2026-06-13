@@ -23,11 +23,16 @@ export const createEventSchema = z.object({
   privacy: z.enum(['public', 'private']).default('public'),
   conferencing: z.boolean().default(false),
   recurrence_rule: z.string().nullable().optional(),
-  attendees: z.array(attendeeSchema).default([]),
-  reminders: z.array(reminderSchema).default([]),
+  attendees: z.array(attendeeSchema).max(200).default([]),
+  reminders: z.array(reminderSchema).max(20).default([]),
 })
 
-export const updateEventSchema = createEventSchema.partial()
+export const updateEventSchema = createEventSchema.partial().extend({
+  // Recurrence edit scope — controls which occurrences are affected
+  // TODO: implement occurrence-level edits when recurrence_id splitting is built
+  scope: z.enum(['single', 'future', 'all', 'custom']).optional(),
+  scope_dates: z.array(z.string()).max(366).optional(),
+})
 
 export const rsvpSchema = z.object({
   response: z.enum(['accepted', 'declined', 'tentative']),

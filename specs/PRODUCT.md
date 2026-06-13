@@ -20,11 +20,10 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 - Google Calendar + Google Meet as the sole integrations
 
 **Non-goals (v1):**
-- Auto-scheduling (architecture accommodates it; implementation deferred — deep design conversation planned)
 - Scale beyond ~10 users (works for friends; no growth investment)
 - iCal, Outlook, Fastmail, CalDAV integration
-- AI features (no AI assistant, no AI meeting notes)
-- Frame concept (Morgen's multi-app launcher)
+- AI meeting notes, AI assistant beyond frame classification
+- Morgen-style multi-app launcher
 - Learning hub, referrals, gift box, open invites, help bubble
 
 ## Behavior
@@ -322,6 +321,75 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 
 61. Tags double as project identifiers for kanban filtering. Selecting a tag in the kanban filter shows only tasks with that tag.
 
+### Frames
+
+94. Frames are named time blocks that define when specific types of work happen. Each frame has a name (e.g., "Deep Work", "Admin", "Creative"), a color, and one or more weekly time blocks (e.g., Mon–Fri 9:00–11:00 AM). Frames are the containers the auto-scheduler fills with tasks.
+
+95. Frames are separate from booking schedules. Schedules define when *others* can book time with you (booking links). Frames define when *your tasks* get auto-placed on the calendar. They may overlap, conflict, or have no relationship to each other.
+
+96. Creating a frame:
+    - **Quick-create on the calendar**: drag to paint a time block on an empty area, right-click → "Create Frame", name it. The painted block becomes the frame's first time block.
+    - **Settings > Preferences > Frames**: full management with weekly grid painter (same drag-to-paint interaction as booking availability).
+    - **API / MCP**: `POST /api/frames` with name + time_blocks.
+
+97. Frames can be recurring (default: repeats every week on the same days/times) or one-off (a specific date range only). Recurring frames use RRULE for custom patterns (e.g., "every weekday", "every other Monday"). One-off frames are useful for temporary schedules like "Sprint Week" or "Conference Prep".
+
+98. Toggle behavior:
+    - **Master toggle** per frame: on/off in Settings or via right-click on the calendar. When off, the auto-scheduler ignores this frame entirely.
+    - **Day override**: right-click a frame instance on the calendar → "Skip today" or "Skip this week". Override is stored per-date without affecting the frame definition.
+    - **Global auto-scheduling toggle**: master on/off for the entire auto-scheduling engine (see #100). When global is off, all frames still render on the calendar as visual guides but no tasks are auto-placed.
+
+99. Frames are managed in Settings > Preferences > Frames. The tab shows:
+    - All frames listed, sortable by drag to set priority rank (which frame fills first when tasks are ambiguous)
+    - Each frame: name, color, weekly time blocks summary, active/inactive toggle
+    - Create / Edit / Delete actions
+    - "AI Classification" toggle (see #107)
+    - "Scoring Weights" section for tuning the priority formula (see #103)
+    - Global auto-scheduling on/off toggle
+
+### Auto-Scheduling
+
+100. Auto-scheduling places unscheduled tasks onto the calendar automatically, filling frame time blocks based on a priority score. It is opt-in — off by default, toggled on in Settings > Preferences > Frames.
+
+101. When auto-scheduling is toggled **on**, existing unscheduled tasks (no `scheduled_start`/`scheduled_end`) are scored, ranked, and placed into upcoming frame instances. A preview modal shows what the scheduler proposes (task → frame instance mapping) before confirming. The user can exclude individual tasks or accept all.
+
+102. When auto-scheduling is toggled **off**, a dialog asks:
+    - **"Keep all auto-scheduled tasks where they are"** — tasks stay on the calendar as if manually placed
+    - **"Unschedule all auto-scheduled tasks"** — tasks return to unscheduled state (inbox/backlog)
+    - **"Turn off for today only"** — auto-scheduling pauses until midnight, then resumes
+    - **"Cancel"** — don't turn off
+
+103. The priority score determines scheduling order. It is a weighted sum of four factors:
+
+    - **Urgency** (task importance field): Highest = 5, High = 4, Normal = 3, Low = 2, Lowest = 1. Normalized to 0–1.
+    - **Deadline pressure**: `max(0, 1 - (days_until_due / 14))`. A task due tomorrow scores ~0.93; due in a week scores ~0.5; due in 2+ weeks or "Someday" scores 0.
+    - **Tag priority**: each tag has an optional priority rank (1–10, default 5). The highest-priority tag on the task is used. Normalized to 0–1. Tasks with no tags use default 5.
+    - **Staleness**: `min(1, days_since_creation / 30)`. Older unscheduled tasks get a small boost to prevent perpetual backlog rot.
+
+    Default weights: urgency **0.35**, deadline **0.30**, tag priority **0.20**, staleness **0.15**. Weights are adjustable in Settings > Preferences > Frames > Scoring Weights. The final score is `Σ(weight × factor)`, range 0–1.
+
+104. The scheduler assigns tasks to frame instances based on frame type matching (see AI Classification, #107–109). When a task matches multiple frames, it goes into the highest-priority-rank frame that has available time. When no frame matches (or AI is off), the task goes into any frame with capacity, highest-priority frame first.
+
+105. The scheduler respects:
+    - Task time estimate (a 2h task won't fit in a 30min frame gap)
+    - Existing calendar events (frame time minus events = available capacity)
+    - `earliest_start` date (won't schedule before this date)
+    - Due date (won't schedule after due date)
+    - Frame priority rank (fills higher-rank frames first)
+    - Buffer between auto-scheduled blocks (minimum 0min, configurable)
+
+106. **Subtask distribution**: when a split parent task's children are unscheduled, the scheduler treats each child as an independent scheduling unit. Children may land in different frame instances across different days. Example: "Prepare Presentation" split into 3 children — "Research" lands in Monday's Deep Work, "Outline" in Tuesday's Deep Work, "Design Slides" in Wednesday's Creative. The scheduler distributes based on each child's individual score and frame affinity.
+
+### AI Frame Classification
+
+107. AI frame classification (optional, toggled in Settings > Preferences > Frames) automatically classifies unscheduled tasks into the most appropriate frame based on the task's title and notes content.
+
+108. Classification uses a two-layer approach:
+    - **Layer 1 — Keyword extraction** (instant, no API cost): a local ruleset maps common keywords to frame names. Examples: "write code", "debug", "implement", "refactor" → "Deep Work"; "email", "invoice", "filing", "expenses" → "Admin"; "brainstorm", "design", "sketch", "write copy" → "Creative". The ruleset is seeded from the user's frame names and descriptions, then evolves as the user makes corrections.
+    - **Layer 2 — LLM fallback** (Haiku-tier, <$0.001/call): when Layer 1 confidence is below threshold (configurable, default 0.6), the task title + notes are sent to a lightweight LLM with the user's frame list as context. The LLM returns a frame name. This fires only for ambiguous cases — most tasks resolve at Layer 1.
+
+109. **Learning from corrections**: when a user manually moves an auto-scheduled task from one frame to another (e.g., drags "Write blog post" from Admin to Creative), the system records the correction. After 3 corrections (configurable) for a keyword or pattern, the keyword ruleset updates automatically. The learning is per-user and persists across sessions.
+
 ### Notifications
 
 62. Four notification channels:
@@ -343,7 +411,7 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 67. Settings navigation:
     - **Explore:** Shortcuts
     - **Integrations:** Calendars, Video conferencing, Telegram
-    - **Preferences:** General, Active calendars, Tags, Availability, Booking page
+    - **Preferences:** General, Active calendars, Tags, Frames, Availability, Booking page
     - **Account:** Profile
 
 68. **General** settings:
@@ -448,7 +516,7 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
     - Task panel toggle (checkbox icon)
     - Calendar view (returns to calendar from other views)
     - Booking page toggle (calendar-with-clock icon)
-    - Schedules (placeholder icon for future schedule management)
+    - Frames (layers/stack icon — opens Frames management panel or navigates to Settings > Frames)
     - --- separator ---
     - Settings / Profile (gear or avatar, bottom-anchored)
 
@@ -460,10 +528,12 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 
 75. Operations:
 
-    **Calendars:**
-    - `GET /api/calendars` — list connected calendars + sub-calendars
-    - `POST /api/calendars/connect` — initiate Google OAuth flow
-    - `DELETE /api/calendars/:id` — disconnect account
+    **Google Calendar:**
+    - `GET /api/google/connect` — initiate Google OAuth flow (redirects to consent screen)
+    - `GET /api/google/callback` — OAuth callback handler
+    - `DELETE /api/google/disconnect/:id` — disconnect account
+    - `POST /api/google/sync` — trigger manual sync for an account
+    - `POST /api/google/webhook` — Google push notification receiver
 
     **Events:**
     - `GET /api/events` — list (filterable by date range, calendar)
@@ -487,24 +557,25 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
     - `DELETE /api/tasks/:id/subtasks/:subtask_id` — remove a subtask
     - `POST /api/tasks/:id/subtasks/reorder` — reorder subtasks (accepts ordered list of subtask IDs)
     - `POST /api/tasks/:id/schedule` — place unscheduled task onto a time slot
-    - `POST /api/tasks/reflow` — reschedule all tasks for a day to resolve conflicts
 
     **Routines:**
     - `GET /api/routines` — list all
     - `POST /api/routines` — create (with repeat pattern)
+    - `GET /api/routines/:id` — get single routine
     - `PATCH /api/routines/:id` — update
     - `DELETE /api/routines/:id` — delete
-    - `POST /api/routines/:id/instances/:date/complete` — check off a day's instance
-    - `POST /api/routines/:id/instances/:date/skip` — skip a day's instance
+    - `GET /api/routines/:id/instances` — list instances for a routine
+    - `PATCH /api/routines/:id/instances/:date` — update instance (set status to completed/skipped/pending, override times/title)
 
     **Booking:**
-    - `GET /api/booking/links` — list
-    - `POST /api/booking/links` — create
-    - `PATCH /api/booking/links/:id` — update
-    - `DELETE /api/booking/links/:id` — delete
-    - `GET /api/booking/links/:id/bookings` — list bookings
-    - `GET /api/booking/availability/:slug` — available slots (external)
-    - `POST /api/booking/book/:slug` — book a slot (external)
+    - `GET /api/booking-links` — list
+    - `POST /api/booking-links` — create
+    - `GET /api/booking-links/:id` — get single booking link
+    - `PATCH /api/booking-links/:id` — update
+    - `DELETE /api/booking-links/:id` — delete
+    - `GET /api/booking-links/:id/bookings` — list bookings
+    - `GET /api/booking-links/:id/availability` — available slots (external)
+    - `POST /api/booking-links/:id/book` — book a slot (external)
 
     **Tags:**
     - `GET /api/tags` — list
@@ -512,7 +583,25 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
     - `PATCH /api/tags/:id` — update
     - `DELETE /api/tags/:id` — delete
 
-    **Schedules (placeholder — future auto-scheduling):**
+    **Frames:**
+    - `GET /api/frames` — list all frames
+    - `POST /api/frames` — create (name, color, time_blocks, recurrence_rule, description)
+    - `PATCH /api/frames/:id` — update
+    - `DELETE /api/frames/:id` — delete
+    - `POST /api/frames/:id/toggle` — toggle active/inactive
+    - `POST /api/frames/:id/override` — add a day override (skip a specific date)
+    - `POST /api/frames/reorder` — reorder frame priority ranks
+
+    **Auto-Scheduling:**
+    - `POST /api/auto-schedule/run` — trigger a scheduling pass (scores + places unscheduled tasks). Returns proposed placements for confirmation or applies directly if `confirm: true`.
+    - `POST /api/auto-schedule/preview` — dry run: returns scored task list with proposed frame assignments without applying
+    - `POST /api/auto-schedule/unschedule` — remove all auto-scheduled placements (tasks return to unscheduled)
+    - `GET /api/auto-schedule/status` — current auto-scheduling state (enabled/disabled, last run, task count)
+    - `POST /api/auto-schedule/classify` — classify a single task into a frame (returns frame_id + confidence)
+    - `GET /api/auto-schedule/settings` — get auto-scheduling configuration (weights, thresholds)
+    - `PATCH /api/auto-schedule/settings` — update auto-scheduling configuration
+
+    **Schedules (booking availability):**
     - `GET /api/schedules` — list named schedules
     - `POST /api/schedules` — create (name + time blocks)
     - `PATCH /api/schedules/:id` — update
@@ -521,8 +610,20 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
     **Type Conversion:**
     - `POST /api/convert` — convert between types. Body: `{source_type, source_id, target_type, calendar_id?, repeat_pattern?}`. Handles all 6 directions (event↔task↔routine). Returns the newly created item. Side effects (Google Cal event creation/deletion) are applied automatically.
 
+    **Profile:**
+    - `GET /api/profile` — authenticated user's profile and settings
+    - `PATCH /api/profile` — update profile information or settings
+
+    **API Keys:**
+    - `GET /api/api-keys` — list all API keys for the user
+    - `POST /api/api-keys` — generate a new named API key
+    - `DELETE /api/api-keys/:id` — revoke an API key
+
     **Search:**
     - `GET /api/search?q=...` — full-text across events, tasks, routines
+
+    **Undo:**
+    - `POST /api/undo` — undo last operation
 
 76. Every write returns the full updated object. Every list supports cursor-based pagination, filtering, and sorting.
 
@@ -538,10 +639,10 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 
 81. MCP tools:
 
-    **Morgen-parity (15 tools):**
-    - `list_calendars` — connected calendars
+    **Morgen-parity (12 tools):**
     - `list_events` — events with date range filter
     - `create_event` — with attendees, conferencing, recurrence
+    - `get_event` — single event by ID
     - `update_event` — modify event
     - `delete_event` — remove event
     - `rsvp_event` — respond to invitation
@@ -551,47 +652,72 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
     - `delete_task` — remove task
     - `close_task` — mark completed
     - `reopen_task` — reopen completed task
-    - `move_task` — change kanban column/board
-    - `event_to_task` — convert event to task (deletes Google Cal event)
-    - `reflow_day` — reschedule conflicting tasks
 
-    **Poolendar-exclusive (32 tools):**
+    **Poolendar-exclusive (56 tools):**
+    - `move_task` — change kanban column/board
     - `schedule_task` — place unscheduled task onto a calendar time slot
+    - `get_task` — single task by ID
     - `split_task` — promote subtasks to independent tasks (or split into N equal chunks)
     - `list_subtasks` — subtasks of a parent task
-    - `add_subtask` — add subtask with optional time estimate
+    - `create_subtask` — add subtask with optional time estimate
     - `update_subtask` — modify subtask title/estimate/completion
     - `delete_subtask` — remove subtask
+    - `reorder_subtasks` — reorder subtasks (accepts ordered list of subtask IDs)
     - `complete_subtask` — check off a subtask
     - `list_routines` — all routines
     - `create_routine` — with repeat pattern
+    - `get_routine` — single routine by ID
     - `update_routine` — modify
     - `delete_routine` — remove
     - `complete_routine_instance` — check off a date's occurrence
     - `skip_routine_instance` — skip a date's occurrence
     - `list_booking_links` — booking page links
     - `create_booking_link` — with availability
+    - `get_booking_link` — single booking link by ID
     - `update_booking_link` — modify
     - `delete_booking_link` — remove
+    - `book_slot` — book a slot on a booking link (external)
     - `list_bookings` — bookings through a link
+    - `get_availability` — available slots for a booking link (external)
     - `list_tags` — all tags
     - `create_tag` — new tag
+    - `get_tag` — single tag by ID
     - `update_tag` — modify
     - `delete_tag` — remove
-    - `task_to_event` — convert task to event (creates Google Cal event)
-    - `task_to_routine` — convert task to routine (prompts repeat pattern)
-    - `routine_to_task` — convert routine to single task (strips recurrence)
-    - `event_to_routine` — convert event to routine (deletes Google Cal event)
-    - `routine_to_event` — convert routine to event (creates Google Cal event)
+    - `convert_item` — convert between types (event/task/routine, all 6 directions). Body: `{source_type, source_id, target_type, calendar_id?, repeat_pattern?}`. Side effects (Google Cal event creation/deletion) applied automatically.
     - `search` — full-text across all entities
-    - `list_schedules` — future auto-scheduling support
-    - `create_schedule` — future auto-scheduling support
-    - `update_schedule` — future auto-scheduling support
-    - `delete_schedule` — future auto-scheduling support
+    - `list_frames` — all frames with time blocks and status
+    - `create_frame` — new frame (name, color, time_blocks, description, recurrence)
+    - `update_frame` — modify frame
+    - `delete_frame` — remove frame
+    - `toggle_frame` — activate/deactivate a frame
+    - `skip_frame_day` — add a day override to skip a frame on a specific date
+    - `auto_schedule_run` — trigger auto-scheduling (scores + places tasks into frames)
+    - `auto_schedule_preview` — dry run showing proposed placements without applying
+    - `auto_schedule_unschedule` — remove all auto-scheduled placements
+    - `auto_schedule_status` — current engine state (enabled, last run, counts)
+    - `classify_task` — classify a single task into a frame (returns frame + confidence)
+    - `list_schedules` — booking availability schedules
+    - `get_schedule` — single schedule by ID
+    - `create_schedule` — new booking schedule
+    - `update_schedule` — modify booking schedule
+    - `delete_schedule` — remove booking schedule
+    - `get_profile` — authenticated user's profile and settings
+    - `update_profile` — modify profile information or settings
+    - `list_api_keys` — all API keys for the user
+    - `create_api_key` — generate a new named API key
+    - `delete_api_key` — revoke an API key
+    - `bulk_create_tasks` — create multiple tasks in one call
+    - `bulk_update_tasks` — update multiple tasks in one call
+    - `bulk_delete_tasks` — delete multiple tasks in one call
 
 82. The `create_task` tool description explicitly states that `scheduled_start` and `scheduled_end` place the task directly on the calendar grid — not the inbox. This is the killer feature.
 
+82a. The `auto_schedule_run` tool description explicitly states that it scores all unscheduled tasks and places them into frame time blocks based on priority, deadline pressure, tag priority, and staleness — the second killer feature.
+
 83. MCP authenticates via API key stored in MCP configuration (not re-entered per call).
+
+83a. Tool count: 12 Morgen-parity + 56 Poolendar-exclusive = 68 total (including 11 frame/auto-schedule tools, 3 bulk operations, 5 profile/API-key management, and 8 get-by-ID tools).
 
 ### Theme & Customization
 
@@ -626,6 +752,8 @@ Existing calendar apps have crippled APIs. Tasks created via Morgen's MCP land i
 
 ## Open Questions
 
-- **Auto-scheduling algorithm:** Deferred but planned as a deep design conversation. Architecture stubs the `schedules` API. Key sub-questions: routine "hot zones" (preferred re-slot windows for skipped routines), task-to-schedule binding ("only schedule during Work Hours"), priority-based ordering, and automatic chunk splitting for long tasks.
-- **Conflict resolution:** When an API-scheduled task overlaps an existing event — reject, warn, or allow? Current spec: allow overlap; `reflow_day` resolves on demand.
+- **AI classification model hosting:** Use Anthropic Haiku API directly, or proxy through a Supabase Edge Function for cost tracking? Edge Function adds latency but centralizes billing.
+- **Frame conflict with events:** When a Google Calendar event lands inside a frame's time block, should the scheduler treat that time as unavailable (subtract event duration from frame capacity), or ignore events? Current spec: subtract (#105).
+- **Routine hot zones:** Should skipped routines auto-reslot into a preferred window later that day? Deferred — routines and frames are independent for v1.
+- **Conflict resolution:** When an API-scheduled task overlaps an existing event — reject, warn, or allow? Current spec: allow overlap.
 - **PWA:** Service worker for offline + push? Likely yes given mobile-first responsive requirement, but adds complexity.

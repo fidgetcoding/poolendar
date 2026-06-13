@@ -13,6 +13,21 @@ export function getScheduleToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'get_schedule',
+      description:
+        'Get full details of a schedule by its UUID, including its name and time blocks.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the schedule to retrieve.',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
       name: 'create_schedule',
       description:
         'Create a named schedule with time blocks. A schedule defines when certain types of work can be auto-scheduled (e.g., "Work Hours" = Mon-Fri 9am-5pm). Placeholder for future auto-scheduling.',
@@ -104,6 +119,11 @@ export function getScheduleToolHandlers(client: PoolendarClient): Record<string,
     list_schedules: async () => {
       const schedules = await client.listSchedules()
       return JSON.stringify(schedules, null, 2)
+    },
+
+    get_schedule: async (args) => {
+      const schedule = await client.getSchedule(args.id as string)
+      return JSON.stringify(schedule, null, 2)
     },
 
     create_schedule: async (args) => {

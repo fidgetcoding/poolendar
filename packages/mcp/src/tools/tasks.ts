@@ -292,6 +292,24 @@ export function getTaskToolDefinitions(): ToolDefinition[] {
         required: ['id', 'scheduled_start', 'scheduled_end'],
       },
     },
+    {
+      name: 'close_task',
+      description: 'Mark a task as done',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { id: { type: 'string', description: 'Task ID' } },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'reopen_task',
+      description: 'Reopen a completed task',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { id: { type: 'string', description: 'Task ID' } },
+        required: ['id'],
+      },
+    },
   ]
 }
 
@@ -306,25 +324,13 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
     },
 
     create_task: async (args) => {
-      const task = await client.createTask({
+      const { tags, ...rest } = args as Record<string, unknown>
+      const body = {
+        ...rest,
         title: args.title as string,
-        notes: args.notes as string | undefined,
-        calendar_id: args.calendar_id as string | undefined,
-        importance: args.importance as 'lowest' | 'low' | 'normal' | 'high' | 'highest' | undefined,
-        time_estimate_minutes: args.time_estimate_minutes as number | undefined,
-        earliest_start: args.earliest_start as string | undefined,
-        due_date: args.due_date as string | undefined,
-        due_date_recurrence: args.due_date_recurrence as string | undefined,
-        scheduled_start: args.scheduled_start as string | undefined,
-        scheduled_end: args.scheduled_end as string | undefined,
-        location: args.location as string | undefined,
-        visibility: args.visibility as 'busy' | 'free' | undefined,
-        privacy: args.privacy as 'private' | 'public' | undefined,
-        flexibility: args.flexibility as 'flexible' | 'not_flexible' | undefined,
-        status: args.status as 'backlog' | 'in_progress' | 'check' | 'done' | undefined,
-        board: args.board as 'current' | 'future' | undefined,
-        reminders: args.reminders as { minutes_before: number }[] | undefined,
-      })
+        ...(tags ? { tag_ids: tags } : {}),
+      }
+      const task = await client.createTask(body as any)
       return JSON.stringify(task, null, 2)
     },
 
@@ -334,7 +340,10 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
     },
 
     update_task: async (args) => {
-      const { id, ...data } = args as Record<string, unknown>
+      const { id, tags, ...data } = args as Record<string, unknown>
+      if (tags) {
+        ;(data as Record<string, unknown>).tag_ids = tags
+      }
       const task = await client.updateTask(id as string, data)
       return JSON.stringify(task, null, 2)
     },
@@ -353,7 +362,10 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
     },
 
     split_task: async (args) => {
-      const children = await client.splitTask(args.id as string)
+      const children = await client.splitTask(
+        args.id as string,
+        args.chunks ? { chunks: args.chunks as Array<{ title: string; time_estimate?: string }> } : undefined
+      )
       return JSON.stringify(children, null, 2)
     },
 
@@ -363,6 +375,16 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
         scheduled_end: args.scheduled_end as string,
       })
       return JSON.stringify(task, null, 2)
+    },
+
+    close_task: async (args) => {
+      const result = await client.completeTask(args.id as string)
+      return JSON.stringify(result, null, 2)
+    },
+
+    reopen_task: async (args) => {
+      const result = await client.reopenTask(args.id as string)
+      return JSON.stringify(result, null, 2)
     },
   }
 }

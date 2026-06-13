@@ -78,7 +78,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create task' }, { status: 500 })
     }
 
-    await supabase.from('events').delete().eq('id', source_id)
+    const { error: deleteError } = await supabase.from('events').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError) {
+      // Rollback: delete the newly created target
+      await supabase.from('tasks').delete().eq('id', task.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
     result = { type: 'task', data: task }
   }
 
@@ -128,7 +133,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create routine' }, { status: 500 })
     }
 
-    await supabase.from('events').delete().eq('id', source_id)
+    const { error: deleteError2 } = await supabase.from('events').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError2) {
+      await supabase.from('routines').delete().eq('id', routine.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
     result = { type: 'routine', data: routine }
   }
 
@@ -206,7 +215,11 @@ export async function POST(request: NextRequest) {
         .eq('id', event.id)
     }
 
-    await supabase.from('tasks').delete().eq('id', source_id)
+    const { error: deleteError3 } = await supabase.from('tasks').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError3) {
+      await supabase.from('events').delete().eq('id', event.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
 
     const { data: finalEvent } = await supabase
       .from('events')
@@ -251,7 +264,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create routine' }, { status: 500 })
     }
 
-    await supabase.from('tasks').delete().eq('id', source_id)
+    const { error: deleteError4 } = await supabase.from('tasks').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError4) {
+      await supabase.from('routines').delete().eq('id', routine.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
     result = { type: 'routine', data: routine }
   }
 
@@ -283,7 +300,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create task' }, { status: 500 })
     }
 
-    await supabase.from('routines').delete().eq('id', source_id)
+    const { error: deleteError5 } = await supabase.from('routines').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError5) {
+      await supabase.from('tasks').delete().eq('id', task.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
     result = { type: 'task', data: task }
   }
 
@@ -368,7 +389,11 @@ export async function POST(request: NextRequest) {
         .eq('id', event.id)
     }
 
-    await supabase.from('routines').delete().eq('id', source_id)
+    const { error: deleteError6 } = await supabase.from('routines').delete().eq('id', source_id).eq('user_id', userId)
+    if (deleteError6) {
+      await supabase.from('events').delete().eq('id', event.id)
+      return NextResponse.json({ error: 'Conversion failed: could not delete source' }, { status: 500 })
+    }
 
     const { data: finalEvent } = await supabase
       .from('events')

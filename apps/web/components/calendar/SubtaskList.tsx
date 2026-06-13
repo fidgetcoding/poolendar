@@ -41,10 +41,10 @@ function parseTimeEstimate(input: string): number | null {
   if (!trimmed) return null
 
   const hourMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*h(?:r|rs|our|ours)?$/)
-  if (hourMatch) return Math.round(parseFloat(hourMatch[1]) * 60)
+  if (hourMatch) return Math.round(parseFloat(hourMatch[1]!) * 60)
 
   const minMatch = trimmed.match(/^(\d+)\s*m(?:in|ins|inute|inutes)?$/)
-  if (minMatch) return parseInt(minMatch[1], 10)
+  if (minMatch) return parseInt(minMatch[1]!, 10)
 
   const numOnly = parseInt(trimmed, 10)
   if (!isNaN(numOnly) && numOnly > 0) return numOnly

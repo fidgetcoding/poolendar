@@ -67,9 +67,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'previous_state is required to undo a delete' }, { status: 400 })
     }
 
+    // Strip dangerous fields that could be used to hijack ownership or bypass constraints
+    const {
+      id: _id,
+      user_id: _uid,
+      created_at: _ca,
+      updated_at: _ua,
+      etag: _etag,
+      sync_status: _ss,
+      google_event_id: _gei,
+      ...safeState
+    } = previous_state
+
     const { data, error } = await supabase
       .from(table)
-      .insert({ ...previous_state, id: entity_id, user_id: userId })
+      .insert({ ...safeState, id: entity_id, user_id: userId })
       .select()
       .single()
 
@@ -86,8 +98,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'previous_state is required to undo an update' }, { status: 400 })
     }
 
-    // Remove fields that shouldn't be updated
-    const { id, user_id, created_at, ...restoreFields } = previous_state
+    // Strip dangerous fields that could be used to hijack ownership or bypass constraints
+    const {
+      id: _id,
+      user_id: _uid,
+      created_at: _ca,
+      updated_at: _ua,
+      etag: _etag,
+      sync_status: _ss,
+      google_event_id: _gei,
+      ...restoreFields
+    } = previous_state
 
     const { data, error } = await supabase
       .from(table)

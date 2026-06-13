@@ -2,13 +2,33 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "preserve",
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
-      "@/*": ["./*"],
-      "@poolendar/types": ["../../packages/types/src"],
-      "@poolendar/validators": ["../../packages/validators/src"]
-    }
+      "@/*": [
+        "./*"
+      ],
+      "@poolendar/types": [
+        "../../packages/types/src"
+      ],
+      "@poolendar/validators": [
+        "../../packages/validators/src"
+      ]
+    },
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

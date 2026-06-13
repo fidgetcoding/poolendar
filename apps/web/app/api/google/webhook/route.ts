@@ -4,12 +4,14 @@ import {
   getGoogleAccessToken,
   googleCalendarRequest,
 } from '../../../../lib/google/calendar'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   // Google push notifications include these headers
   const channelId = request.headers.get('x-goog-channel-id')
   const resourceId = request.headers.get('x-goog-resource-id')
   const resourceState = request.headers.get('x-goog-resource-state')
+  const channelToken = request.headers.get('x-goog-channel-token')
 
   // Google sends a sync message on initial watch setup
   if (resourceState === 'sync') {
@@ -18,6 +20,16 @@ export async function POST(request: NextRequest) {
 
   if (!channelId || !resourceId) {
     return new NextResponse(null, { status: 400 })
+  }
+
+  // Verify the webhook shared secret
+  if (!channelToken || channelToken !== process.env.GOOGLE_WEBHOOK_SECRET) {
+    return new NextResponse(null, { status: 403 })
+  }
+
+  // Rate limit: 60 webhook calls per minute per channel
+  if (!rateLimit(`webhook:${channelId}`, 60, 60000)) {
+    return new NextResponse(null, { status: 429 })
   }
 
   const supabase = createServerClient(
@@ -32,8 +44,9 @@ export async function POST(request: NextRequest) {
   )
 
   // Find all Google accounts and sync incrementally
-  // In a production system, the channel_id would be stored alongside the google_account
-  // to map webhooks to specific accounts. For now, we do a broad sync.
+  // TODO: Add a webhook_channel_id column to google_accounts and create a mapping table
+  // to associate channel IDs with specific accounts. For now, we sync all accounts but
+  // at least verify the webhook token above.
   const { data: accounts } = await supabase
     .from('google_accounts')
     .select('id, user_id, sync_token')
@@ -80,11 +93,12 @@ export async function POST(request: NextRequest) {
             }
 
             const isAllDay = !!item.start?.date
+            // For all-day events, store the bare date without UTC conversion
             const startTime = isAllDay
-              ? `${item.start.date}T00:00:00Z`
+              ? `${item.start.date}T00:00:00`
               : item.start?.dateTime
             const endTime = isAllDay
-              ? `${item.end.date}T00:00:00Z`
+              ? `${item.end.date}T00:00:00`
               : item.end?.dateTime
 
             if (!startTime || !endTime) continue

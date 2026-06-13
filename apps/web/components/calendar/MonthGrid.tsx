@@ -1,7 +1,9 @@
 'use client'
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { format, isSameDay, isSameMonth, isToday } from 'date-fns'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CalendarItemData } from './calendar-types'
 
@@ -16,6 +18,124 @@ interface MonthGridProps {
   onItemDoubleClick?: (item: CalendarItemData) => void
 }
 
+// ---------------------------------------------------------------------------
+// Day overflow popover
+// ---------------------------------------------------------------------------
+
+interface DayOverflowPopoverProps {
+  date: Date
+  items: CalendarItemData[]
+  anchorRect: DOMRect
+  onItemClick?: (item: CalendarItemData) => void
+  onItemDoubleClick?: (item: CalendarItemData) => void
+  onClose: () => void
+}
+
+function DayOverflowPopover({
+  date,
+  items,
+  anchorRect,
+  onItemClick,
+  onItemDoubleClick,
+  onClose,
+}: DayOverflowPopoverProps) {
+  const popoverRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [onClose])
+
+  // Position below the anchor, with viewport clamping
+  const POPOVER_WIDTH = 220
+  const GAP = 4
+  const VIEWPORT_PADDING = 12
+
+  let top = anchorRect.bottom + GAP
+  let left = anchorRect.left
+
+  if (left + POPOVER_WIDTH > window.innerWidth - VIEWPORT_PADDING) {
+    left = window.innerWidth - POPOVER_WIDTH - VIEWPORT_PADDING
+  }
+  if (left < VIEWPORT_PADDING) {
+    left = VIEWPORT_PADDING
+  }
+
+  const maxHeight = window.innerHeight - top - VIEWPORT_PADDING
+  if (maxHeight < 120) {
+    top = anchorRect.top - 200 - GAP
+  }
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      role="dialog"
+      aria-label={`All items for ${format(date, 'MMMM d')}`}
+      className={cn(
+        'fixed z-50',
+        'rounded-lg border border-[var(--border)]',
+        'bg-[var(--surface)] shadow-xl shadow-black/40',
+        'animate-in fade-in-0 zoom-in-95 duration-150'
+      )}
+      style={{
+        top,
+        left,
+        width: POPOVER_WIDTH,
+        maxHeight: Math.min(300, Math.max(120, maxHeight)),
+        overflow: 'hidden',
+      }}
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
+        <span className="text-xs font-semibold text-[var(--fg)]">
+          {format(date, 'EEEE, MMM d')}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center justify-center w-5 h-5 rounded text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)] transition-colors duration-150"
+        >
+          <X size={12} />
+        </button>
+      </div>
+      <div className="overflow-y-auto p-1" style={{ maxHeight: 250 }}>
+        {items.map((item) => (
+          <MonthPill
+            key={item.id}
+            item={item}
+            onItemClick={onItemClick}
+            onItemDoubleClick={onItemDoubleClick}
+          />
+        ))}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ---------------------------------------------------------------------------
+// MonthGrid
+// ---------------------------------------------------------------------------
+
 export function MonthGrid({
   currentDate,
   visibleDays,
@@ -23,6 +143,22 @@ export function MonthGrid({
   onItemClick,
   onItemDoubleClick,
 }: MonthGridProps) {
+  const [expandedDay, setExpandedDay] = React.useState<{
+    date: Date
+    items: CalendarItemData[]
+    anchorRect: DOMRect
+  } | null>(null)
+
+  function handleShowMore(
+    e: React.MouseEvent<HTMLButtonElement>,
+    day: Date,
+    dayItems: CalendarItemData[]
+  ) {
+    e.stopPropagation()
+    const rect = (e.target as HTMLElement).getBoundingClientRect()
+    setExpandedDay({ date: day, items: dayItems, anchorRect: rect })
+  }
+
   return (
     <div className="flex flex-col flex-1 overflow-auto">
       <div className="grid grid-cols-7 border-b border-[var(--border)] bg-[var(--surface)]">
@@ -84,6 +220,7 @@ export function MonthGrid({
                 {overflowCount > 0 && (
                   <button
                     type="button"
+                    onClick={(e) => handleShowMore(e, day, dayItems)}
                     className={cn(
                       'text-left text-[10px] font-medium px-1.5 py-0.5 rounded',
                       'text-[var(--muted)] hover:text-[var(--fg)]',
@@ -99,6 +236,17 @@ export function MonthGrid({
           )
         })}
       </div>
+
+      {expandedDay && (
+        <DayOverflowPopover
+          date={expandedDay.date}
+          items={expandedDay.items}
+          anchorRect={expandedDay.anchorRect}
+          onItemClick={onItemClick}
+          onItemDoubleClick={onItemDoubleClick}
+          onClose={() => setExpandedDay(null)}
+        />
+      )}
     </div>
   )
 }

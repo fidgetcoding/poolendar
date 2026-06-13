@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { timingSafeEqual } from 'crypto'
 import { NextRequest } from 'next/server'
 
 export async function authenticateApiKey(request: NextRequest): Promise<string | null> {
@@ -33,12 +34,10 @@ export async function authenticateApiKey(request: NextRequest): Promise<string |
   for (const key of keys) {
     const encoder = new TextEncoder()
     const keyData = encoder.encode(apiKey)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', keyData)
-    const hashHex = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
+    const hashBuffer = Buffer.from(new Uint8Array(await crypto.subtle.digest('SHA-256', keyData)))
+    const expectedBuffer = Buffer.from(key.key_hash, 'hex')
 
-    if (hashHex === key.key_hash) {
+    if (hashBuffer.length === expectedBuffer.length && timingSafeEqual(hashBuffer, expectedBuffer)) {
       await supabase
         .from('api_keys')
         .update({ last_used_at: new Date().toISOString() })

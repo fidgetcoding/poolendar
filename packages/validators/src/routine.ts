@@ -11,7 +11,7 @@ export const createRoutineSchema = z.object({
   location: z.string().max(500).nullable().optional(),
   visibility: z.enum(['busy', 'free']).default('busy'),
   privacy: z.enum(['private', 'public']).default('private'),
-  reminders: z.array(z.object({ minutes_before: z.number().int().positive() })).default([]),
+  reminders: z.array(z.object({ minutes_before: z.number().int().positive() })).max(20).default([]),
 })
 
 export const updateRoutineSchema = createRoutineSchema.partial()

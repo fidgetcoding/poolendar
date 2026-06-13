@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
@@ -32,7 +33,7 @@ interface TaskCardProps {
   isDragOverlay?: boolean
 }
 
-export function TaskCard({
+export const TaskCard = React.memo(function TaskCard({
   task,
   onTaskClick,
   onTaskComplete,
@@ -267,4 +268,4 @@ export function TaskCard({
       )}
     </div>
   )
-}
+})

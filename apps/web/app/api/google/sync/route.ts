@@ -102,11 +102,12 @@ export async function POST(request: NextRequest) {
           }
 
           const isAllDay = !!item.start?.date
+          // For all-day events, store the bare date without UTC conversion
           const startTime = isAllDay
-            ? `${item.start.date}T00:00:00Z`
+            ? `${item.start.date}T00:00:00`
             : item.start?.dateTime
           const endTime = isAllDay
-            ? `${item.end.date}T00:00:00Z`
+            ? `${item.end.date}T00:00:00`
             : item.end?.dateTime
 
           if (!startTime || !endTime) continue

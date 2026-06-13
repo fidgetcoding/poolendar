@@ -13,6 +13,8 @@ interface CalendarItemProps {
   onItemClick?: (item: CalendarItemData) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
   onResizeStart?: (item: CalendarItemData) => void
+  onItemResize?: (itemId: string, itemType: string, newEnd: Date) => void
+  onRoutineCheckboxClick?: (item: CalendarItemData) => void
 }
 
 function darkenColor(hex: string, amount: number): string {
@@ -35,19 +37,23 @@ function formatTimeRange(start: Date, end: Date): string {
   return `${format(start, 'h:mm')} - ${format(end, 'h:mm a')}`
 }
 
-export function CalendarItem({
+export const CalendarItem = React.memo(function CalendarItem({
   item,
   style: positionStyle,
   onItemClick,
   onItemDoubleClick,
   onResizeStart,
+  onItemResize,
+  onRoutineCheckboxClick,
 }: CalendarItemProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: item.id,
     data: { type: 'calendar-item', item },
   })
 
-  const isCompleted = item.type === 'task' && item.task?.status === 'done'
+  const isTaskCompleted = item.type === 'task' && item.task?.status === 'done'
+  const isRoutineCompleted = item.type === 'routine' && item.routineInstanceStatus === 'completed'
+  const isCompleted = isTaskCompleted || isRoutineCompleted
   const heightNum = parseFloat(String(positionStyle.height) || '0')
   const isCompact = heightNum < 40
 
@@ -65,6 +71,27 @@ export function CalendarItem({
     e.stopPropagation()
     e.preventDefault()
     onResizeStart?.(item)
+
+    const startY = e.clientY
+    const originalEndTime = item.endTime
+    const hourHeightPx = 60 // pixels per hour, matches DayColumn default
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY
+      const deltaMinutes = Math.round(deltaY / (hourHeightPx / 60) / 15) * 15
+      const newEnd = new Date(originalEndTime.getTime() + deltaMinutes * 60000)
+      if (newEnd > item.startTime) {
+        onItemResize?.(item.id, item.type, newEnd)
+      }
+    }
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
   }
 
   const mergedStyle: React.CSSProperties = {
@@ -81,6 +108,9 @@ export function CalendarItem({
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        data-calendar-item
+        data-item-id={item.id}
+        data-item-type={item.type}
         style={mergedStyle}
         className={cn(
           'absolute rounded-md overflow-hidden cursor-pointer',
@@ -134,6 +164,9 @@ export function CalendarItem({
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        data-calendar-item
+        data-item-id={item.id}
+        data-item-type={item.type}
         style={mergedStyle}
         className={cn(
           'absolute rounded-md overflow-hidden cursor-pointer',
@@ -222,12 +255,20 @@ export function CalendarItem({
     )
   }
 
-  // Routine
+  // Routine — checkbox + repeat icon
+  function handleRoutineCheckbox(e: React.MouseEvent) {
+    e.stopPropagation()
+    onRoutineCheckboxClick?.(item)
+  }
+
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      data-calendar-item
+      data-item-id={item.id}
+      data-item-type={item.type}
       style={mergedStyle}
       className={cn(
         'absolute rounded-md overflow-hidden cursor-pointer',
@@ -246,15 +287,37 @@ export function CalendarItem({
         }}
       />
       <div className="relative flex items-start gap-1.5 pl-2 pr-2 py-1 min-h-0 overflow-hidden">
+        {/* Checkbox for routine instance completion */}
+        <button
+          type="button"
+          onClick={handleRoutineCheckbox}
+          className={cn(
+            'shrink-0 w-3 h-3 rounded border flex items-center justify-center mt-px',
+            'transition-colors duration-150'
+          )}
+          style={{
+            borderColor: isRoutineCompleted ? item.color : hexToRgba(item.color, 0.5),
+            backgroundColor: isRoutineCompleted ? item.color : 'transparent',
+          }}
+          aria-label={isRoutineCompleted ? 'Uncheck routine' : 'Complete routine'}
+        >
+          {isRoutineCompleted && (
+            <CheckSquare size={8} style={{ color: '#fff' }} />
+          )}
+        </button>
+        {/* Repeat icon */}
         <Repeat2
-          size={12}
-          className="shrink-0 mt-px"
-          style={{ color: item.color }}
+          size={10}
+          className="shrink-0 mt-0.5"
+          style={{ color: hexToRgba(item.color, 0.6) }}
         />
         <div className="min-w-0 flex-1">
           {isCompact ? (
             <p
-              className="text-xs font-medium truncate leading-tight"
+              className={cn(
+                'text-xs font-medium truncate leading-tight',
+                isRoutineCompleted && 'line-through'
+              )}
               style={{ color: item.color }}
             >
               {item.title}
@@ -262,7 +325,10 @@ export function CalendarItem({
           ) : (
             <>
               <p
-                className="text-xs font-medium truncate leading-tight"
+                className={cn(
+                  'text-xs font-medium truncate leading-tight',
+                  isRoutineCompleted && 'line-through'
+                )}
                 style={{ color: item.color }}
               >
                 {item.title}
@@ -288,4 +354,4 @@ export function CalendarItem({
       />
     </div>
   )
-}
+})

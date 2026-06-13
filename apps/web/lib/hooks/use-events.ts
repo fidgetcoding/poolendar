@@ -40,8 +40,8 @@ export function useEvents(start: string, end: string, calendarId?: string) {
       let query = supabase
         .from('events')
         .select('*')
-        .gte('start_time', start)
-        .lte('end_time', end)
+        .lte('start_time', end)
+        .gte('end_time', start)
         .order('start_time', { ascending: true })
 
       if (calendarId) {

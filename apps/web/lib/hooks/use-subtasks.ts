@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Subtask } from '@poolendar/types'
 import { createClient } from '@/lib/supabase/client'
+import { taskKeys } from './use-tasks'
 
 // ---------------------------------------------------------------------------
 // Query-key factory
@@ -144,6 +145,7 @@ export function useCreateSubtask() {
       queryClient.invalidateQueries({
         queryKey: subtaskKeys.list(input.task_id),
       })
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(input.task_id) })
     },
   })
 }
@@ -194,6 +196,7 @@ export function useUpdateSubtask() {
 
     onSettled: (_data, _err, { task_id }) => {
       queryClient.invalidateQueries({ queryKey: subtaskKeys.list(task_id) })
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(task_id) })
     },
   })
 }
@@ -241,6 +244,7 @@ export function useDeleteSubtask() {
 
     onSettled: (_data, _err, { task_id }) => {
       queryClient.invalidateQueries({ queryKey: subtaskKeys.list(task_id) })
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(task_id) })
     },
   })
 }
@@ -305,6 +309,7 @@ export function useReorderSubtasks() {
 
     onSettled: (_data, _err, { taskId }) => {
       queryClient.invalidateQueries({ queryKey: subtaskKeys.list(taskId) })
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) })
     },
   })
 }

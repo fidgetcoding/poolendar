@@ -148,7 +148,9 @@ export function getBulkToolHandlers(client: PoolendarClient): Record<string, Too
       const results: BulkResult[] = await Promise.all(
         tasks.map(async (taskData, index) => {
           try {
-            const task = await client.createTask(taskData)
+            const { tags, ...rest } = taskData
+            const body = { ...rest, ...(tags ? { tag_ids: tags } : {}) }
+            const task = await client.createTask(body as any)
             return { index, success: true, data: task }
           } catch (err) {
             return {
@@ -165,8 +167,11 @@ export function getBulkToolHandlers(client: PoolendarClient): Record<string, Too
     bulk_update_tasks: async (args) => {
       const tasks = args.tasks as { id: string; [key: string]: unknown }[]
       const results: BulkResult[] = await Promise.all(
-        tasks.map(async ({ id, ...data }, index) => {
+        tasks.map(async ({ id, tags, ...data }, index) => {
           try {
+            if (tags) {
+              ;(data as Record<string, unknown>).tag_ids = tags
+            }
             const task = await client.updateTask(id, data)
             return { index, success: true, data: task }
           } catch (err) {

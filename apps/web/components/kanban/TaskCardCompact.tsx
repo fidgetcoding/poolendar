@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CheckCircle2, Circle } from 'lucide-react'
@@ -20,7 +21,7 @@ interface TaskCardCompactProps {
   onTaskComplete: (taskId: string) => void
 }
 
-export function TaskCardCompact({
+export const TaskCardCompact = React.memo(function TaskCardCompact({
   task,
   onTaskClick,
   onTaskComplete,
@@ -120,4 +121,4 @@ export function TaskCardCompact({
       )}
     </div>
   )
-}
+})

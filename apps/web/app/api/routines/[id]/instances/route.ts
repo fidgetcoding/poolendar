@@ -85,7 +85,7 @@ export async function GET(
   // Generate pending instances for dates that match the rrule but have no row
   const generatedInstances = occurrences
     .map((date) => {
-      const dateStr = date.toISOString().split('T')[0]
+      const dateStr = date.toISOString().split('T')[0]!
       if (existingDates.has(dateStr)) return null
       return {
         id: null,

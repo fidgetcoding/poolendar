@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || ''
-  const subdomain = hostname.split('.')[0]
+  const subdomain = hostname.split('.')[0] ?? ''
 
   // Subdomain routing for booking pages
   // If subdomain is not the app itself, treat it as a booking page namespace

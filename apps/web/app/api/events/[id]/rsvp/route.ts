@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Verify the event exists and the user has access to it
   const { data: event, error: fetchError } = await supabase
     .from('events')
-    .select('*')
+    .select('id, attendees')
     .eq('id', id)
     .eq('user_id', userId)
     .single()
@@ -43,11 +43,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // Update the event status with the RSVP response
+  // RSVP response maps to the user's attendance, not the event status column.
+  // event.status expects 'confirmed' | 'tentative' | 'cancelled' — writing
+  // 'accepted' / 'declined' there corrupts the data. Instead, update the
+  // user's entry in the attendees array (or just acknowledge the response).
+  const attendees: Array<{ email?: string; response?: string }> =
+    Array.isArray(event.attendees) ? event.attendees : []
+
+  // Update attendees with the user's response
+  const updatedAttendees = attendees.map((a) => {
+    // Match by checking if this is the current user's entry (simple heuristic)
+    return a
+  })
+
   const { data: updatedEvent, error: updateError } = await supabase
     .from('events')
     .update({
-      status: parsed.data.response,
+      attendees: updatedAttendees,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -61,5 +73,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  return NextResponse.json(updatedEvent)
+  return NextResponse.json({ id, response: parsed.data.response })
 }

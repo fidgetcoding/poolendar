@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Tag } from '@poolendar/types'
 import { createClient } from '@/lib/supabase/client'
+import { taskKeys } from './use-tasks'
 
 // ---------------------------------------------------------------------------
 // Query-key factory
@@ -203,7 +204,7 @@ export function useDeleteTag() {
 
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: tagKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: taskKeys.all })
     },
   })
 }

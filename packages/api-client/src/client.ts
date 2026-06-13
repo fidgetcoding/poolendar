@@ -11,6 +11,10 @@ import type {
   ApiKey,
   PaginatedResponse,
   SearchResult,
+  Frame,
+  AutoSchedulePlacement,
+  AutoScheduleStatus,
+  TaskClassification,
 } from '@poolendar/types'
 
 export interface ClientConfig {
@@ -43,27 +47,46 @@ export class PoolendarClient {
   }
 
   // Events
-  async listEvents(params?: { start?: string; end?: string; calendar_id?: string }) {
-    const q = new URLSearchParams(params as Record<string, string>).toString()
+  async listEvents(params: { start: string; end: string; calendar_id?: string }) {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        searchParams.set(key, String(value))
+      }
+    })
+    const q = searchParams.toString()
     return this.request<CalendarEvent[]>(`/api/events${q ? `?${q}` : ''}`)
   }
   async getEvent(id: string) { return this.request<CalendarEvent>(`/api/events/${id}`) }
   async createEvent(data: Partial<CalendarEvent>) { return this.request<CalendarEvent>('/api/events', { method: 'POST', body: JSON.stringify(data) }) }
   async updateEvent(id: string, data: Partial<CalendarEvent>) { return this.request<CalendarEvent>(`/api/events/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteEvent(id: string) { return this.request<void>(`/api/events/${id}`, { method: 'DELETE' }) }
+  async rsvpEvent(eventId: string, data: { response: 'accepted' | 'declined' | 'tentative' }) {
+    return this.request(`/api/events/${eventId}/rsvp`, { method: 'POST', body: JSON.stringify(data) })
+  }
 
   // Tasks
-  async listTasks(params?: { status?: string; board?: string }) {
-    const q = new URLSearchParams(params as Record<string, string>).toString()
+  async listTasks(params?: { status?: string; board?: string; parent_id?: string }) {
+    const searchParams = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.set(key, String(value))
+        }
+      })
+    }
+    const q = searchParams.toString()
     return this.request<Task[]>(`/api/tasks${q ? `?${q}` : ''}`)
   }
   async getTask(id: string) { return this.request<Task>(`/api/tasks/${id}`) }
   async createTask(data: Partial<Task>) { return this.request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(data) }) }
   async updateTask(id: string, data: Partial<Task>) { return this.request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteTask(id: string) { return this.request<void>(`/api/tasks/${id}`, { method: 'DELETE' }) }
-  async moveTask(id: string, data: { status: string; position: number }) { return this.request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify(data) }) }
-  async splitTask(id: string) { return this.request<Task[]>(`/api/tasks/${id}/split`, { method: 'POST' }) }
+  async moveTask(id: string, data: { status?: string; position?: number; board?: string }) { return this.request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify(data) }) }
+  async splitTask(id: string, data?: { chunks?: Array<{ title: string; time_estimate?: string }> }) { return this.request<Task[]>(`/api/tasks/${id}/split`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }) }
   async scheduleTask(id: string, data: { scheduled_start: string; scheduled_end: string }) { return this.request<Task>(`/api/tasks/${id}/schedule`, { method: 'POST', body: JSON.stringify(data) }) }
+  async completeTask(id: string) { return this.request<Task>(`/api/tasks/${id}/complete`, { method: 'POST' }) }
+  async reopenTask(id: string) { return this.request<Task>(`/api/tasks/${id}/reopen`, { method: 'POST' }) }
 
   // Subtasks
   async listSubtasks(taskId: string) { return this.request<Subtask[]>(`/api/tasks/${taskId}/subtasks`) }
@@ -78,15 +101,24 @@ export class PoolendarClient {
   async createRoutine(data: Partial<Routine>) { return this.request<Routine>('/api/routines', { method: 'POST', body: JSON.stringify(data) }) }
   async updateRoutine(id: string, data: Partial<Routine>) { return this.request<Routine>(`/api/routines/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteRoutine(id: string) { return this.request<void>(`/api/routines/${id}`, { method: 'DELETE' }) }
+  async listRoutineInstances(routineId: string, params: { start: string; end: string }) {
+    const searchParams = new URLSearchParams({ start: params.start, end: params.end })
+    return this.request(`/api/routines/${routineId}/instances?${searchParams}`)
+  }
+  async updateRoutineInstance(routineId: string, date: string, data: { status: 'completed' | 'skipped' }) {
+    return this.request(`/api/routines/${routineId}/instances/${date}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
 
   // Tags
   async listTags() { return this.request<Tag[]>('/api/tags') }
-  async createTag(data: { name: string; color: string }) { return this.request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) }) }
+  async createTag(data: { name: string; color: string; prefix?: string }) { return this.request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) }) }
+  async getTag(id: string) { return this.request<Tag>(`/api/tags/${id}`) }
   async updateTag(id: string, data: Partial<Tag>) { return this.request<Tag>(`/api/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteTag(id: string) { return this.request<void>(`/api/tags/${id}`, { method: 'DELETE' }) }
 
   // Booking Links
   async listBookingLinks() { return this.request<BookingLink[]>('/api/booking-links') }
+  async getBookingLink(id: string) { return this.request<BookingLink>(`/api/booking-links/${id}`) }
   async createBookingLink(data: Partial<BookingLink>) { return this.request<BookingLink>('/api/booking-links', { method: 'POST', body: JSON.stringify(data) }) }
   async updateBookingLink(id: string, data: Partial<BookingLink>) { return this.request<BookingLink>(`/api/booking-links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteBookingLink(id: string) { return this.request<void>(`/api/booking-links/${id}`, { method: 'DELETE' }) }
@@ -94,26 +126,80 @@ export class PoolendarClient {
   // Bookings
   async listBookings(linkId: string) { return this.request<Booking[]>(`/api/booking-links/${linkId}/bookings`) }
   async bookSlot(linkId: string, data: { booker_name: string; booker_email: string; start_time: string }) { return this.request<Booking>(`/api/booking-links/${linkId}/book`, { method: 'POST', body: JSON.stringify(data) }) }
+  async getAvailability(linkId: string, params: { start: string; end: string; timezone?: string }) {
+    const searchParams = new URLSearchParams()
+    searchParams.set('start', params.start)
+    searchParams.set('end', params.end)
+    if (params.timezone) searchParams.set('timezone', params.timezone)
+    return this.request(`/api/booking-links/${linkId}/availability?${searchParams}`)
+  }
 
   // Schedules
   async listSchedules() { return this.request<Schedule[]>('/api/schedules') }
+  async getSchedule(id: string) { return this.request<Schedule>(`/api/schedules/${id}`) }
   async createSchedule(data: Partial<Schedule>) { return this.request<Schedule>('/api/schedules', { method: 'POST', body: JSON.stringify(data) }) }
   async updateSchedule(id: string, data: Partial<Schedule>) { return this.request<Schedule>(`/api/schedules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteSchedule(id: string) { return this.request<void>(`/api/schedules/${id}`, { method: 'DELETE' }) }
 
+  // Frames
+  async listFrames() { return this.request<Frame[]>('/api/frames') }
+  async getFrame(id: string) { return this.request<Frame>(`/api/frames/${id}`) }
+  async createFrame(data: Partial<Frame>) { return this.request<Frame>('/api/frames', { method: 'POST', body: JSON.stringify(data) }) }
+  async updateFrame(id: string, data: Partial<Frame>) { return this.request<Frame>(`/api/frames/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
+  async deleteFrame(id: string) { return this.request<void>(`/api/frames/${id}`, { method: 'DELETE' }) }
+  async toggleFrame(id: string) { return this.request<Frame>(`/api/frames/${id}/toggle`, { method: 'POST' }) }
+  async reorderFrames(order: string[]) { return this.request<Frame[]>('/api/frames/reorder', { method: 'POST', body: JSON.stringify({ order }) }) }
+  async skipFrameDay(id: string, date: string, active: boolean = false) {
+    return this.request<Frame>(`/api/frames/${id}/override`, { method: 'POST', body: JSON.stringify({ date, active }) })
+  }
+
+  // Auto-Schedule
+  async autoScheduleRun(opts?: { confirm?: boolean; window_days?: number }) {
+    return this.request<{ placements: AutoSchedulePlacement[] }>('/api/auto-schedule/run', { method: 'POST', body: JSON.stringify(opts ?? { confirm: true }) })
+  }
+  async autoSchedulePreview(windowDays?: number) {
+    return this.request<{ placements: AutoSchedulePlacement[] }>('/api/auto-schedule/preview', { method: 'POST', body: JSON.stringify({ window_days: windowDays }) })
+  }
+  async autoScheduleUnschedule() {
+    return this.request<{ unscheduled_count: number }>('/api/auto-schedule/unschedule', { method: 'POST' })
+  }
+  async autoScheduleStatus() {
+    return this.request<AutoScheduleStatus>('/api/auto-schedule/status')
+  }
+  async autoScheduleSettings() {
+    return this.request<{ enabled: boolean; ai_classification: boolean; scoring_weights: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until: string | null }>('/api/auto-schedule/settings')
+  }
+  async updateAutoScheduleSettings(data: { enabled?: boolean; ai_classification?: boolean; scoring_weights?: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until?: string | null }) {
+    return this.request<{ enabled: boolean; ai_classification: boolean; scoring_weights: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until: string | null }>('/api/auto-schedule/settings', { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  async classifyTask(taskId: string) {
+    return this.request<TaskClassification>('/api/auto-schedule/classify', { method: 'POST', body: JSON.stringify({ task_id: taskId }) })
+  }
+
+  // Undo
+  async undo() { return this.request<any>('/api/undo', { method: 'POST' }) }
+
+  // Google Sync
+  async triggerGoogleSync() { return this.request<any>('/api/google/sync', { method: 'POST' }) }
+
   // Convert
-  async convert(data: { source_type: string; source_id: string; target_type: string }) { return this.request<CalendarEvent | Task | Routine>('/api/convert', { method: 'POST', body: JSON.stringify(data) }) }
+  async convert(data: { source_type: string; source_id: string; target_type: string; calendar_id?: string; repeat_pattern?: string }) { return this.request<CalendarEvent | Task | Routine>('/api/convert', { method: 'POST', body: JSON.stringify(data) }) }
 
   // Search
   async search(q: string, types?: string[]) {
     const params = new URLSearchParams({ q })
-    types?.forEach(t => params.append('types', t))
+    if (types?.length) {
+      params.set('types', types.join(','))
+    }
     return this.request<SearchResult[]>(`/api/search?${params}`)
   }
 
   // Profile
   async getProfile() { return this.request<Profile>('/api/profile') }
   async updateProfile(data: Partial<Profile>) { return this.request<Profile>('/api/profile', { method: 'PATCH', body: JSON.stringify(data) }) }
+
+  // Account
+  async deleteAccount() { await this.request<void>('/api/auth/delete-account', { method: 'DELETE' }) }
 
   // API Keys
   async listApiKeys() { return this.request<ApiKey[]>('/api/api-keys') }

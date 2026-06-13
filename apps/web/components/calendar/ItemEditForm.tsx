@@ -19,6 +19,7 @@ import type { Calendar, Tag } from '@poolendar/types'
 import { SubtaskList } from './SubtaskList'
 import { RecurrenceBuilder } from './RecurrenceBuilder'
 import { ReminderEditor } from './ReminderEditor'
+import { RecurrenceEditDialog, type RecurrenceEditScope } from './RecurrenceEditDialog'
 
 type EditItemType = 'event' | 'task' | 'routine'
 
@@ -59,9 +60,11 @@ interface ItemEditFormProps {
   }
   calendars: Calendar[]
   availableTags: Tag[]
-  onSave: (type: EditItemType, data: Record<string, unknown>) => void
-  onDelete?: () => void
+  onSave: (type: EditItemType, data: Record<string, unknown>, scope?: RecurrenceEditScope) => void
+  onDelete?: (scope?: RecurrenceEditScope) => void
   onClose: () => void
+  /** Pre-selected recurrence scope from the preview popover dialog */
+  recurrenceScope?: RecurrenceEditScope
 }
 
 const TABS: { value: EditItemType; label: string }[] = [
@@ -146,9 +149,14 @@ export function ItemEditForm({
   onSave,
   onDelete,
   onClose,
+  recurrenceScope,
 }: ItemEditFormProps) {
   const [activeTab, setActiveTab] = React.useState<EditItemType>(initialType)
   const [isMounted, setIsMounted] = React.useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+
+  // Track whether the item being edited is recurring
+  const isRecurring = Boolean(initialData?.recurrence_rule)
 
   // Shared fields
   const [title, setTitle] = React.useState(initialData?.title ?? '')
@@ -274,9 +282,9 @@ export function ItemEditForm({
     const trimmed = input.trim().toLowerCase()
     if (!trimmed) return null
     const hMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*h/)
-    if (hMatch) return Math.round(parseFloat(hMatch[1]) * 60)
+    if (hMatch) return Math.round(parseFloat(hMatch[1]!) * 60)
     const mMatch = trimmed.match(/^(\d+)\s*m/)
-    if (mMatch) return parseInt(mMatch[1], 10)
+    if (mMatch) return parseInt(mMatch[1]!, 10)
     const n = parseInt(trimmed, 10)
     return isNaN(n) ? null : n
   }
@@ -301,7 +309,7 @@ export function ItemEditForm({
         recurrence_rule: recurrenceRule,
         conferencing_url: conferencingUrl || null,
         attendees: attendeeEmails.map((email) => ({ email, response_status: 'needsAction' })),
-      })
+      }, recurrenceScope)
     } else if (activeTab === 'task') {
       onSave('task', {
         ...shared,
@@ -319,15 +327,28 @@ export function ItemEditForm({
             : null,
         subtasks,
         tags: selectedTags.map((t) => t.id),
-      })
+      }, recurrenceScope)
     } else {
       onSave('routine', {
         ...shared,
         start_time: routineStartTime,
         end_time: routineEndTime,
         recurrence_rule: recurrenceRule ?? 'FREQ=DAILY',
-      })
+      }, recurrenceScope)
     }
+  }
+
+  function handleDeleteClick() {
+    if (isRecurring) {
+      setDeleteDialogOpen(true)
+    } else {
+      onDelete?.()
+    }
+  }
+
+  function handleDeleteScopeSelect(scope: RecurrenceEditScope) {
+    setDeleteDialogOpen(false)
+    onDelete?.(scope)
   }
 
   if (!isMounted) return null
@@ -915,7 +936,7 @@ export function ItemEditForm({
             {mode === 'edit' && onDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={handleDeleteClick}
                 className={cn(
                   'px-4 py-2 rounded-md text-sm font-medium',
                   'text-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white',
@@ -958,6 +979,15 @@ export function ItemEditForm({
           </div>
         </div>
       </div>
+
+      {/* Recurrence scope dialog for delete on recurring items */}
+      <RecurrenceEditDialog
+        isOpen={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onSelect={handleDeleteScopeSelect}
+        itemTitle={title || initialData?.title || ''}
+        mode="delete"
+      />
     </div>,
     document.body
   )

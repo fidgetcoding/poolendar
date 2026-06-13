@@ -114,6 +114,19 @@ export function getSubtaskToolDefinitions(): ToolDefinition[] {
         required: ['task_id', 'order'],
       },
     },
+    {
+      name: 'complete_subtask',
+      description: 'Toggle a subtask completion status',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          task_id: { type: 'string', description: 'Parent task ID' },
+          subtask_id: { type: 'string', description: 'Subtask ID' },
+          completed: { type: 'boolean', description: 'Whether the subtask is completed' },
+        },
+        required: ['task_id', 'subtask_id', 'completed'],
+      },
+    },
   ]
 }
 
@@ -157,6 +170,15 @@ export function getSubtaskToolHandlers(client: PoolendarClient): Record<string, 
         args.order as string[]
       )
       return JSON.stringify(subtasks, null, 2)
+    },
+
+    complete_subtask: async (args) => {
+      const result = await client.updateSubtask(
+        args.task_id as string,
+        args.subtask_id as string,
+        { completed: args.completed as boolean }
+      )
+      return JSON.stringify(result, null, 2)
     },
   }
 }

@@ -39,6 +39,21 @@ export function getTagToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'get_tag',
+      description:
+        'Get full details of a tag by its UUID, including its name, color, and prefix.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the tag to retrieve.',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
       name: 'update_tag',
       description:
         'Update a tag\'s name, color, or prefix. Changes are reflected immediately on all tasks using this tag.',
@@ -76,6 +91,11 @@ export function getTagToolHandlers(client: PoolendarClient): Record<string, Tool
     list_tags: async () => {
       const tags = await client.listTags()
       return JSON.stringify(tags, null, 2)
+    },
+
+    get_tag: async (args) => {
+      const tag = await client.getTag(args.id as string)
+      return JSON.stringify(tag, null, 2)
     },
 
     create_tag: async (args) => {

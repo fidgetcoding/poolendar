@@ -34,14 +34,15 @@ export function mapGoogleEventToLocal(
 ): Partial<CalendarEvent> {
   const isAllDay = Boolean(googleEvent.start?.date)
 
+  // For all-day events, store the bare date without UTC conversion
   const startTime = isAllDay
-    ? new Date(googleEvent.start.date + 'T00:00:00').toISOString()
+    ? `${googleEvent.start.date}T00:00:00`  // Local midnight, no TZ shift
     : googleEvent.start?.dateTime
       ? new Date(googleEvent.start.dateTime).toISOString()
       : new Date().toISOString()
 
   const endTime = isAllDay
-    ? new Date(googleEvent.end.date + 'T00:00:00').toISOString()
+    ? `${googleEvent.end.date}T00:00:00`
     : googleEvent.end?.dateTime
       ? new Date(googleEvent.end.dateTime).toISOString()
       : new Date().toISOString()

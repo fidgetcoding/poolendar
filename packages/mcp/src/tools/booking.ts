@@ -1,11 +1,6 @@
 import type { PoolendarClient } from '@poolendar/api-client'
 import type { ToolDefinition, ToolHandler } from '../types.js'
 
-export interface BookingHandlerConfig {
-  baseUrl: string
-  apiKey: string
-}
-
 export function getBookingToolDefinitions(): ToolDefinition[] {
   return [
     {
@@ -164,6 +159,58 @@ export function getBookingToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'get_booking_link',
+      description:
+        'Get full details of a booking link by its UUID, including availability windows, settings, and configuration.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the booking link to retrieve.',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'book_slot',
+      description:
+        'Book a time slot through a booking link. Creates a booking on behalf of an external person. The booking appears as an event on the host\'s calendar.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          booking_link_id: {
+            type: 'string',
+            description: 'The UUID of the booking link to book through.',
+          },
+          name: {
+            type: 'string',
+            description: 'Full name of the person booking.',
+          },
+          email: {
+            type: 'string',
+            description: 'Email address of the person booking. Used for sending confirmation.',
+          },
+          start_time: {
+            type: 'string',
+            description:
+              'Start time for the booking in ISO 8601 format (e.g., "2026-06-15T14:00:00-04:00"). Must be an available slot.',
+          },
+          end_time: {
+            type: 'string',
+            description:
+              'End time for the booking in ISO 8601 format (e.g., "2026-06-15T14:30:00-04:00").',
+          },
+          notes: {
+            type: 'string',
+            description: 'Optional notes from the booker (e.g., meeting agenda, context).',
+          },
+        },
+        required: ['booking_link_id', 'name', 'email', 'start_time'],
+      },
+    },
+    {
       name: 'list_bookings',
       description:
         'List all bookings made through a specific booking link. Returns booker information, scheduled times, and booking status (pending, confirmed, cancelled, rescheduled).',
@@ -207,8 +254,7 @@ export function getBookingToolDefinitions(): ToolDefinition[] {
 }
 
 export function getBookingToolHandlers(
-  client: PoolendarClient,
-  config?: BookingHandlerConfig
+  client: PoolendarClient
 ): Record<string, ToolHandler> {
   return {
     list_booking_links: async () => {
@@ -250,37 +296,35 @@ export function getBookingToolHandlers(
       return JSON.stringify({ success: true, message: 'Booking link deleted successfully.' })
     },
 
+    get_booking_link: async (args) => {
+      const link = await client.getBookingLink(args.id as string)
+      return JSON.stringify(link, null, 2)
+    },
+
+    book_slot: async (args) => {
+      const booking = await client.bookSlot(args.booking_link_id as string, {
+        booker_name: args.name as string,
+        booker_email: args.email as string,
+        start_time: args.start_time as string,
+        ...(args.end_time ? { end_time: args.end_time as string } : {}),
+        ...(args.notes ? { notes: args.notes as string } : {}),
+      } as any)
+      return JSON.stringify(booking, null, 2)
+    },
+
     list_bookings: async (args) => {
       const bookings = await client.listBookings(args.booking_link_id as string)
       return JSON.stringify(bookings, null, 2)
     },
 
     get_availability: async (args) => {
-      // The PoolendarClient doesn't expose a dedicated getAvailability method,
-      // so we make a direct fetch to the REST API endpoint.
-      const params = new URLSearchParams({
-        date: args.date as string,
+      const date = args.date as string
+      const result = await client.getAvailability(args.booking_link_id as string, {
+        start: date,
+        end: date,
+        ...(args.timezone ? { timezone: args.timezone as string } : {}),
       })
-      if (args.timezone) {
-        params.set('timezone', args.timezone as string)
-      }
-
-      const baseUrl = config?.baseUrl ?? 'http://localhost:3000'
-      const url = `${baseUrl}/api/booking-links/${args.booking_link_id}/availability?${params}`
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
-      if (config?.apiKey) {
-        headers['Authorization'] = `Bearer ${config.apiKey}`
-      }
-
-      const res = await fetch(url, { headers })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error ?? `HTTP ${res.status}: ${res.statusText}`)
-      }
-      const data = await res.json()
-      return JSON.stringify(data, null, 2)
+      return JSON.stringify(result, null, 2)
     },
   }
 }

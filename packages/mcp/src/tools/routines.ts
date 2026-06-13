@@ -144,6 +144,30 @@ export function getRoutineToolDefinitions(): ToolDefinition[] {
         required: ['id'],
       },
     },
+    {
+      name: 'complete_routine_instance',
+      description: 'Mark a routine instance as completed for a specific date',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          routine_id: { type: 'string', description: 'Routine ID' },
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+        },
+        required: ['routine_id', 'date'],
+      },
+    },
+    {
+      name: 'skip_routine_instance',
+      description: 'Skip a routine instance for a specific date',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          routine_id: { type: 'string', description: 'Routine ID' },
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+        },
+        required: ['routine_id', 'date'],
+      },
+    },
   ]
 }
 
@@ -185,6 +209,16 @@ export function getRoutineToolHandlers(client: PoolendarClient): Record<string, 
     delete_routine: async (args) => {
       await client.deleteRoutine(args.id as string)
       return JSON.stringify({ success: true, message: 'Routine deleted successfully.' })
+    },
+
+    complete_routine_instance: async (args) => {
+      const result = await client.updateRoutineInstance(args.routine_id as string, args.date as string, { status: 'completed' })
+      return JSON.stringify(result, null, 2)
+    },
+
+    skip_routine_instance: async (args) => {
+      const result = await client.updateRoutineInstance(args.routine_id as string, args.date as string, { status: 'skipped' })
+      return JSON.stringify(result, null, 2)
     },
   }
 }

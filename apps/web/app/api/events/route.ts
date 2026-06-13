@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
     const googleResult = await createGoogleEvent(
       calendar.google_account_id,
       calendar.google_calendar_id,
-      googleEventBody,
+      googleEventBody as Parameters<typeof createGoogleEvent>[2],
       input.conferencing
     )
 

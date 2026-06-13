@@ -104,7 +104,7 @@ function Select({
       case ' ': {
         e.preventDefault()
         if (highlightedIndex >= 0 && highlightedIndex < enabledOptions.length) {
-          selectOption(enabledOptions[highlightedIndex])
+          selectOption(enabledOptions[highlightedIndex]!)
         }
         break
       }

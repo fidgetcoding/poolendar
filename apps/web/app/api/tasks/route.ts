@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     if (!tagsByTaskId[tt.task_id]) {
       tagsByTaskId[tt.task_id] = []
     }
-    tagsByTaskId[tt.task_id].push(tt.tags)
+    tagsByTaskId[tt.task_id]!.push(tt.tags)
   }
 
   const tasksWithTags = tasks.map((task) => ({

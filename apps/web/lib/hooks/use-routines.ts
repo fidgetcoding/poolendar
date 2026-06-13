@@ -421,3 +421,82 @@ export function useSkipRoutineInstance() {
     },
   })
 }
+
+// ---------------------------------------------------------------------------
+// useResetRoutineInstance — delete instance row so it reverts to 'pending'
+// ---------------------------------------------------------------------------
+
+export function useResetRoutineInstance() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      routine_id,
+      date,
+    }: UpsertInstanceInput): Promise<void> => {
+      const { error } = await supabase
+        .from('routine_instances')
+        .delete()
+        .eq('routine_id', routine_id)
+        .eq('date', date)
+
+      if (error) throw error
+    },
+
+    onMutate: async ({ routine_id, date }) => {
+      await queryClient.cancelQueries({
+        queryKey: routineKeys.allInstances(),
+      })
+
+      const previous = queryClient.getQueriesData<RoutineInstance[]>({
+        queryKey: routineKeys.allInstances(),
+      })
+
+      queryClient.setQueriesData<RoutineInstance[]>(
+        { queryKey: routineKeys.allInstances() },
+        (old) =>
+          old
+            ? old.filter(
+                (i) => !(i.routine_id === routine_id && i.date === date),
+              )
+            : old,
+      )
+
+      return { previous }
+    },
+
+    onError: (_err, _input, context) => {
+      if (!context?.previous) return
+      for (const [key, data] of context.previous) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: routineKeys.allInstances() })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useTodayRoutineInstances — all instances for today (for sidebar panel)
+// ---------------------------------------------------------------------------
+
+export function useTodayRoutineInstances() {
+  const supabase = createClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  return useQuery({
+    queryKey: [...routineKeys.allInstances(), 'today', today],
+    queryFn: async (): Promise<RoutineInstance[]> => {
+      const { data, error } = await supabase
+        .from('routine_instances')
+        .select('*')
+        .eq('date', today)
+
+      if (error) throw error
+      return data as RoutineInstance[]
+    },
+  })
+}

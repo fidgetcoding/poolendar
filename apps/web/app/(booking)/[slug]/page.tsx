@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import {
   format,
@@ -17,6 +17,42 @@ import { BookingConfirmation } from '@/components/booking-external/BookingConfir
 import type { BookingLink, AvailabilitySlot } from '@poolendar/types'
 
 type BookingStep = 'loading' | 'date' | 'time' | 'form' | 'confirmed' | 'error'
+
+const COMMON_TIMEZONES = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'America/Toronto',
+  'America/Vancouver',
+  'America/Mexico_City',
+  'America/Sao_Paulo',
+  'America/Buenos_Aires',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Amsterdam',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Zurich',
+  'Europe/Stockholm',
+  'Europe/Moscow',
+  'Europe/Istanbul',
+  'Africa/Cairo',
+  'Africa/Johannesburg',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Bangkok',
+  'Asia/Singapore',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Australia/Sydney',
+  'Australia/Melbourne',
+  'Pacific/Auckland',
+]
 
 interface BookingResult {
   id: string
@@ -145,6 +181,20 @@ export default function BookingPage() {
     },
     [slug, detectedTimezone]
   )
+
+  // Refetch time slots when timezone changes while a date is already selected.
+  // loadTimeSlots is recreated when detectedTimezone changes (it's in its deps),
+  // which triggers this effect. We use a ref to track whether this is the initial
+  // render vs an actual timezone change.
+  const prevTimezoneRef = useRef(detectedTimezone)
+  useEffect(() => {
+    if (prevTimezoneRef.current !== detectedTimezone) {
+      prevTimezoneRef.current = detectedTimezone
+      if (selectedDate && (step === 'time' || step === 'form')) {
+        loadTimeSlots(selectedDate)
+      }
+    }
+  }, [detectedTimezone, selectedDate, step, loadTimeSlots])
 
   function handleSelectDate(date: Date) {
     setSelectedDate(date)
@@ -287,12 +337,28 @@ export default function BookingPage() {
           ) : (
             <>
               {/* Timezone + time format controls */}
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
-                  <Globe className="h-3.5 w-3.5" />
-                  {detectedTimezone.replace(/_/g, ' ')}
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-[var(--muted)] min-w-0">
+                  <Globe className="h-3.5 w-3.5 shrink-0" />
+                  <select
+                    value={detectedTimezone}
+                    onChange={(e) => {
+                      setDetectedTimezone(e.target.value)
+                    }}
+                    className="bg-transparent text-xs text-[var(--fg)] border-none outline-none cursor-pointer truncate max-w-[200px]"
+                    aria-label="Timezone"
+                  >
+                    {(COMMON_TIMEZONES.includes(detectedTimezone)
+                      ? COMMON_TIMEZONES
+                      : [detectedTimezone, ...COMMON_TIMEZONES]
+                    ).map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz.replace(/_/g, ' ')}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="flex rounded border border-[var(--border)] bg-[var(--bg)]">
+                <div className="flex rounded border border-[var(--border)] bg-[var(--bg)] shrink-0">
                   <button
                     onClick={() => setTimeFormat('12h')}
                     className={`px-2 py-0.5 text-xs transition-colors ${

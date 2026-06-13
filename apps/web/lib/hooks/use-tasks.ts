@@ -24,6 +24,8 @@ type TaskListFilters = {
   status?: TaskStatus
   board?: TaskBoard
   parentId?: string
+  scheduled_after?: string
+  scheduled_before?: string
 }
 
 type CreateTaskInput = Omit<
@@ -83,6 +85,12 @@ export function useTasks(filters: TaskListFilters = {}) {
       }
       if (filters.parentId) {
         query = query.eq('parent_id', filters.parentId)
+      }
+      if (filters.scheduled_after) {
+        query = query.gte('scheduled_start', filters.scheduled_after)
+      }
+      if (filters.scheduled_before) {
+        query = query.lte('scheduled_start', filters.scheduled_before)
       }
 
       const { data, error } = await query

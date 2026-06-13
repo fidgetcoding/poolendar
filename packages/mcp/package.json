@@ -1,7 +1,8 @@
 {
   "name": "poolendar-mcp",
   "version": "0.1.0",
-  "description": "MCP server for Poolendar — 47 calendar tools",
+  "type": "module",
+  "description": "MCP server for Poolendar — 68 calendar tools",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -19,6 +20,7 @@
     "@poolendar/validators": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.15.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

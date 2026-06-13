@@ -43,6 +43,16 @@ function scoreResult(result: SearchResult, query: string): number {
   if (lowerTitle === lowerQuery) return 3
   if (lowerTitle.startsWith(lowerQuery)) return 2
   if (lowerTitle.includes(lowerQuery)) return 1
+
+  // Tag and attendee matches (surfaced in snippet) rank equal to title contains
+  const lowerSnippet = result.snippet?.toLowerCase() ?? ''
+  if (
+    (lowerSnippet.startsWith('tag:') || lowerSnippet.startsWith('attendee:')) &&
+    lowerSnippet.includes(lowerQuery)
+  ) {
+    return 1
+  }
+
   return 0
 }
 
@@ -67,9 +77,18 @@ export function useSearch(
 
       const searches: Promise<void>[] = []
 
+      const seenIds = new Set<string>()
+      function pushUnique(item: SearchResult) {
+        const key = `${item.type}:${item.id}`
+        if (seenIds.has(key)) return
+        seenIds.add(key)
+        results.push(item)
+      }
+
       if (searchTypes.includes('event')) {
+        // Title + notes search
         searches.push(
-          supabase
+          Promise.resolve(supabase
             .from('events')
             .select('id, title, notes, start_time')
             .or(`title.ilike.${pattern},notes.ilike.${pattern}`)
@@ -78,7 +97,7 @@ export function useSearch(
               if (error) throw error
               if (data) {
                 for (const row of data) {
-                  results.push({
+                  pushUnique({
                     type: 'event',
                     id: row.id as string,
                     title: row.title as string,
@@ -87,13 +106,43 @@ export function useSearch(
                   })
                 }
               }
-            }),
+            })),
+        )
+
+        // Attendee email search
+        searches.push(
+          Promise.resolve(supabase
+            .from('events')
+            .select('id, title, notes, start_time, attendees')
+            .or(`attendees::text.ilike.${pattern}`)
+            .limit(20)
+            .then(({ data, error }) => {
+              if (error) throw error
+              if (data) {
+                for (const row of data) {
+                  const attendees = ((row as any).attendees ?? []) as { email: string; name?: string }[]
+                  const matched = attendees.find(
+                    (a) => a.email?.toLowerCase().includes(debouncedQuery.toLowerCase())
+                  )
+                  pushUnique({
+                    type: 'event',
+                    id: row.id as string,
+                    title: row.title as string,
+                    date: row.start_time as string | null,
+                    snippet: matched
+                      ? `Attendee: ${matched.email}`
+                      : row.notes as string | null,
+                  })
+                }
+              }
+            })),
         )
       }
 
       if (searchTypes.includes('task')) {
+        // Title + notes search
         searches.push(
-          supabase
+          Promise.resolve(supabase
             .from('tasks')
             .select('id, title, notes, due_date')
             .or(`title.ilike.${pattern},notes.ilike.${pattern}`)
@@ -102,7 +151,7 @@ export function useSearch(
               if (error) throw error
               if (data) {
                 for (const row of data) {
-                  results.push({
+                  pushUnique({
                     type: 'task',
                     id: row.id as string,
                     title: row.title as string,
@@ -111,13 +160,50 @@ export function useSearch(
                   })
                 }
               }
-            }),
+            })),
+        )
+
+        // Tag name search — find tasks via task_tags join
+        searches.push(
+          Promise.resolve(supabase
+            .from('tags')
+            .select('name, task_tags(task_id)')
+            .ilike('name', pattern)
+            .then(async ({ data: tagMatches, error }) => {
+              if (error) throw error
+              const tagTaskIds = tagMatches?.flatMap((t) =>
+                ((t.task_tags as any[]) ?? []).map((tt: any) => tt.task_id)
+              ) ?? []
+              if (tagTaskIds.length === 0) return
+
+              const { data: tagTasks, error: taskError } = await supabase
+                .from('tasks')
+                .select('id, title, notes, due_date')
+                .in('id', tagTaskIds)
+                .limit(20)
+              if (taskError) throw taskError
+
+              for (const row of tagTasks ?? []) {
+                const matchedTagName = tagMatches?.find((tag) =>
+                  ((tag.task_tags as any[]) ?? []).some((tt: any) => tt.task_id === row.id)
+                )?.name
+                pushUnique({
+                  type: 'task',
+                  id: row.id as string,
+                  title: row.title as string,
+                  date: row.due_date as string | null,
+                  snippet: matchedTagName
+                    ? `Tag: ${matchedTagName}`
+                    : row.notes as string | null,
+                })
+              }
+            })),
         )
       }
 
       if (searchTypes.includes('routine')) {
         searches.push(
-          supabase
+          Promise.resolve(supabase
             .from('routines')
             .select('id, title, start_time')
             .ilike('title', pattern)
@@ -126,7 +212,7 @@ export function useSearch(
               if (error) throw error
               if (data) {
                 for (const row of data) {
-                  results.push({
+                  pushUnique({
                     type: 'routine',
                     id: row.id as string,
                     title: row.title as string,
@@ -135,13 +221,13 @@ export function useSearch(
                   })
                 }
               }
-            }),
+            })),
         )
       }
 
       if (searchTypes.includes('booking_link')) {
         searches.push(
-          supabase
+          Promise.resolve(supabase
             .from('booking_links')
             .select('id, name, slug, created_at')
             .or(`name.ilike.${pattern},slug.ilike.${pattern}`)
@@ -150,7 +236,7 @@ export function useSearch(
               if (error) throw error
               if (data) {
                 for (const row of data) {
-                  results.push({
+                  pushUnique({
                     type: 'booking_link',
                     id: row.id as string,
                     title: row.name as string,
@@ -159,7 +245,7 @@ export function useSearch(
                   })
                 }
               }
-            }),
+            })),
         )
       }
 

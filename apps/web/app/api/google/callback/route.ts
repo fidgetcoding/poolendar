@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { authenticate, isAuthError } from '../../../../lib/auth/helpers'
+
+async function hmacSign(data: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(process.env.GOOGLE_CLIENT_SECRET!),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data))
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const code = searchParams.get('code')
-  const state = searchParams.get('state') // user_id
+  const state = searchParams.get('state')
   const error = searchParams.get('error')
 
   if (error) {
@@ -19,7 +35,41 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const userId = state
+  // Verify CSRF: split state into userId.nonce.signature
+  const stateParts = state.split('.')
+  if (stateParts.length !== 3) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=invalid_state`
+    )
+  }
+
+  const [stateUserId, stateNonce, stateSignature] = stateParts
+
+  // Verify the HMAC signature
+  const expectedSignature = await hmacSign(`${stateUserId}.${stateNonce}`)
+  if (stateSignature !== expectedSignature) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=invalid_state`
+    )
+  }
+
+  // Verify the nonce matches the cookie
+  const cookieNonce = request.cookies.get('oauth_state')?.value
+  if (!cookieNonce || cookieNonce !== stateNonce) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=invalid_state`
+    )
+  }
+
+  // Verify the user's session matches the userId in state
+  const auth = await authenticate(request)
+  if (isAuthError(auth) || auth.userId !== stateUserId) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=session_mismatch`
+    )
+  }
+
+  const userId = stateUserId
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/google/callback`
 
   // Exchange code for tokens
@@ -119,7 +169,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `${process.env.NEXT_PUBLIC_APP_URL}/settings?google_connected=true`
   )
+
+  // Delete the oauth_state cookie
+  response.cookies.set('oauth_state', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0,
+    path: '/',
+  })
+
+  return response
 }

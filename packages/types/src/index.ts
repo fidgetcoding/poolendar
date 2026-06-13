@@ -1,4 +1,4 @@
-export type { Profile, UserSettings } from './user'
+export type { Profile, UserSettings, NotificationSettings, NotificationChannelConfig } from './user'
 export type { GoogleAccount, Calendar } from './calendar'
 export type {
   CalendarEvent,
@@ -29,6 +29,16 @@ export type {
 export type { Tag } from './tag'
 export type { ApiKey } from './api-key'
 export type { Schedule } from './schedule'
+export type {
+  Frame,
+  FrameTimeBlock,
+  FrameKeyword,
+  FrameCorrection,
+  AutoScheduleStatus,
+  AutoSchedulePlacement,
+  TaskClassification,
+  AutoScheduleWeights,
+} from './frame'
 export type {
   ConvertRequest,
   ConvertDirection,

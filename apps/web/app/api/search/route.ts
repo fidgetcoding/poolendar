@@ -18,13 +18,22 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50)
   const pattern = `%${q}%`
 
+  const seen = new Set<string>()
   const results: { type: string; id: string; title: string; date: string | null; snippet: string | null }[] = []
+
+  function pushUnique(item: typeof results[number]) {
+    const key = `${item.type}:${item.id}`
+    if (seen.has(key)) return
+    seen.add(key)
+    results.push(item)
+  }
 
   const queries: Promise<void>[] = []
 
   if (types.includes('event')) {
+    // Title + notes search
     queries.push(
-      supabase
+      Promise.resolve(supabase
         .from('events')
         .select('id, title, notes, start_time')
         .eq('user_id', userId)
@@ -33,7 +42,7 @@ export async function GET(request: NextRequest) {
         .limit(limit)
         .then(({ data }) => {
           for (const e of data ?? []) {
-            results.push({
+            pushUnique({
               type: 'event',
               id: e.id,
               title: e.title,
@@ -41,13 +50,42 @@ export async function GET(request: NextRequest) {
               snippet: e.notes ? e.notes.slice(0, 200) : null,
             })
           }
-        })
+        }))
+    )
+
+    // Attendee email search (cast jsonb to text for partial matching)
+    queries.push(
+      Promise.resolve(supabase
+        .from('events')
+        .select('id, title, notes, start_time, attendees')
+        .eq('user_id', userId)
+        .or(`attendees::text.ilike.${pattern}`)
+        .order('start_time', { ascending: false })
+        .limit(limit)
+        .then(({ data }) => {
+          for (const e of data ?? []) {
+            const attendees = (e.attendees ?? []) as { email: string; name?: string }[]
+            const matchedEmail = attendees.find(
+              (a) => a.email?.toLowerCase().includes(q!.toLowerCase())
+            )
+            pushUnique({
+              type: 'event',
+              id: e.id,
+              title: e.title,
+              date: e.start_time,
+              snippet: matchedEmail
+                ? `Attendee: ${matchedEmail.email}`
+                : e.notes ? e.notes.slice(0, 200) : null,
+            })
+          }
+        }))
     )
   }
 
   if (types.includes('task')) {
+    // Title + notes search
     queries.push(
-      supabase
+      Promise.resolve(supabase
         .from('tasks')
         .select('id, title, notes, due_date, created_at')
         .eq('user_id', userId)
@@ -56,7 +94,7 @@ export async function GET(request: NextRequest) {
         .limit(limit)
         .then(({ data }) => {
           for (const t of data ?? []) {
-            results.push({
+            pushUnique({
               type: 'task',
               id: t.id,
               title: t.title,
@@ -64,13 +102,50 @@ export async function GET(request: NextRequest) {
               snippet: t.notes ? t.notes.slice(0, 200) : null,
             })
           }
-        })
+        }))
+    )
+
+    // Tag name search — find tasks via task_tags join
+    queries.push(
+      Promise.resolve(supabase
+        .from('tags')
+        .select('name, task_tags(task_id)')
+        .ilike('name', pattern)
+        .eq('user_id', userId)
+        .then(async ({ data: tagMatches }) => {
+          const tagTaskIds = tagMatches?.flatMap((t) =>
+            ((t.task_tags as any[]) ?? []).map((tt: any) => tt.task_id)
+          ) ?? []
+          if (tagTaskIds.length === 0) return
+
+          const { data: tagTasks } = await supabase
+            .from('tasks')
+            .select('id, title, notes, due_date, created_at')
+            .in('id', tagTaskIds)
+            .eq('user_id', userId)
+            .limit(limit)
+
+          for (const t of tagTasks ?? []) {
+            const matchedTagName = tagMatches?.find((tag) =>
+              ((tag.task_tags as any[]) ?? []).some((tt: any) => tt.task_id === t.id)
+            )?.name
+            pushUnique({
+              type: 'task',
+              id: t.id,
+              title: t.title,
+              date: t.due_date || t.created_at,
+              snippet: matchedTagName
+                ? `Tag: ${matchedTagName}`
+                : t.notes ? t.notes.slice(0, 200) : null,
+            })
+          }
+        }))
     )
   }
 
   if (types.includes('routine')) {
     queries.push(
-      supabase
+      Promise.resolve(supabase
         .from('routines')
         .select('id, title, notes, created_at')
         .eq('user_id', userId)
@@ -79,7 +154,7 @@ export async function GET(request: NextRequest) {
         .limit(limit)
         .then(({ data }) => {
           for (const r of data ?? []) {
-            results.push({
+            pushUnique({
               type: 'routine',
               id: r.id,
               title: r.title,
@@ -87,13 +162,13 @@ export async function GET(request: NextRequest) {
               snippet: r.notes ? r.notes.slice(0, 200) : null,
             })
           }
-        })
+        }))
     )
   }
 
   if (types.includes('booking_link')) {
     queries.push(
-      supabase
+      Promise.resolve(supabase
         .from('booking_links')
         .select('id, name, notes, created_at')
         .eq('user_id', userId)
@@ -102,7 +177,7 @@ export async function GET(request: NextRequest) {
         .limit(limit)
         .then(({ data }) => {
           for (const b of data ?? []) {
-            results.push({
+            pushUnique({
               type: 'booking_link',
               id: b.id,
               title: b.name,
@@ -110,7 +185,7 @@ export async function GET(request: NextRequest) {
               snippet: b.notes ? b.notes.slice(0, 200) : null,
             })
           }
-        })
+        }))
     )
   }
 

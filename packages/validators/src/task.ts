@@ -17,12 +17,12 @@ export const createTaskSchema = z.object({
   flexibility: z.enum(['flexible', 'not_flexible']).default('flexible'),
   status: z.enum(['backlog', 'in_progress', 'check', 'done']).default('backlog'),
   board: z.enum(['current', 'future']).default('current'),
-  tag_ids: z.array(z.string().uuid()).default([]),
-  reminders: z.array(z.object({ minutes_before: z.number().int().positive() })).default([]),
+  tag_ids: z.array(z.string().uuid()).max(50).default([]),
+  reminders: z.array(z.object({ minutes_before: z.number().int().positive() })).max(20).default([]),
   subtasks: z.array(z.object({
     title: z.string().min(1).max(500),
     time_estimate_minutes: z.number().int().positive().nullable().optional(),
-  })).optional(),
+  })).max(100).optional(),
 })
 
 export const updateTaskSchema = createTaskSchema.partial()
@@ -54,5 +54,5 @@ export const updateSubtaskSchema = z.object({
 })
 
 export const reorderSubtasksSchema = z.object({
-  subtask_ids: z.array(z.string().uuid()),
+  subtask_ids: z.array(z.string().uuid()).max(200),
 })

@@ -23,10 +23,10 @@ const GOOGLE_SCOPES = [
 
 /**
  * Generate Google OAuth consent URL.
- * State param encodes the userId so the callback can associate the account.
+ * State param must be a pre-signed CSRF-safe string (userId.nonce.hmac).
  */
 export function getGoogleOAuthUrl(
-  userId: string,
+  signedState: string,
   redirectUri: string
 ): string {
   const params = new URLSearchParams({
@@ -36,7 +36,7 @@ export function getGoogleOAuthUrl(
     scope: GOOGLE_SCOPES,
     access_type: 'offline',
     prompt: 'consent',
-    state: userId,
+    state: signedState,
   })
 
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`

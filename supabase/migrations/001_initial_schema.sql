@@ -4,6 +4,7 @@
 -- 1. Profiles (extends auth.users)
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  email text,
   username text unique not null,
   display_name text,
   company text,
@@ -14,17 +15,23 @@ create table public.profiles (
 );
 alter table public.profiles enable row level security;
 create policy "Users read own profile" on public.profiles for select using (auth.uid() = id);
+create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
 create policy "Users update own profile" on public.profiles for update using (auth.uid() = id);
 
 -- Auto-create profile on signup
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, username, display_name)
+  insert into public.profiles (id, email, username, display_name, settings)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1))
+    new.email,
+    coalesce(
+      lower(regexp_replace(coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)), '[^a-zA-Z0-9]', '', 'g')),
+      'user' || substr(new.id::text, 1, 8)
+    ),
+    coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    '{"timezone": "America/New_York", "time_format": "12h", "date_format": "MM/DD/YYYY", "first_day_of_week": "sunday", "initial_view": "week", "default_task_duration": 30, "theme_accent_color": "#6366f1", "time_drag_resolution": 15, "show_weekends": true, "show_declined_events": false, "show_completed_tasks": true, "dim_past_events": true, "undo_grace_period": 30, "background_density": "comfortable", "move_due_date_behavior": "ask", "language": "en", "time_grid_start": "06:00", "time_grid_end": "22:00", "time_display_resolution": 15, "limit_events_per_day": 4}'::jsonb
   );
   return new;
 end;
@@ -68,6 +75,7 @@ create table public.calendars (
 alter table public.calendars enable row level security;
 create policy "Users manage own calendars" on public.calendars
   for all using (auth.uid() = user_id);
+create index idx_calendars_google_account_id on public.calendars (google_account_id);
 
 -- 4. Events
 create table public.events (
@@ -102,6 +110,7 @@ create policy "Users manage own events" on public.events
 create index idx_events_time on public.events (user_id, start_time, end_time);
 create index idx_events_google on public.events (google_event_id);
 create index idx_events_sync on public.events (user_id, sync_status) where sync_status != 'synced';
+create index idx_events_calendar_id on public.events (calendar_id);
 
 -- 5. Tasks
 create table public.tasks (
@@ -233,7 +242,7 @@ create table public.booking_links (
   duration_minutes int not null,
   availability jsonb not null,
   timezone text default 'America/New_York',
-  google_account_id uuid references public.google_accounts(id),
+  google_account_id uuid references public.google_accounts(id) on delete set null,
   conferencing boolean default true,
   location text,
   notes text,
@@ -270,11 +279,20 @@ create policy "Booking link owners read bookings" on public.bookings
   for select using (
     exists (select 1 from public.booking_links where booking_links.id = bookings.booking_link_id and booking_links.user_id = auth.uid())
   );
+create policy "Users can update own bookings" on public.bookings
+  for update using (
+    exists (select 1 from public.booking_links bl where bl.id = bookings.booking_link_id and bl.user_id = auth.uid())
+  );
+create policy "Users can delete own bookings" on public.bookings
+  for delete using (
+    exists (select 1 from public.booking_links bl where bl.id = bookings.booking_link_id and bl.user_id = auth.uid())
+  );
 create policy "Public can create bookings" on public.bookings
   for insert with check (true);
 create policy "Public can read own bookings by cancel token" on public.bookings
   for select using (true);
 create index idx_bookings_time on public.bookings (booking_link_id, start_time, end_time);
+create index idx_bookings_status on public.bookings (status);
 
 -- 13. API keys
 create table public.api_keys (
@@ -319,3 +337,49 @@ create trigger update_tasks_updated_at before update on public.tasks for each ro
 create trigger update_routines_updated_at before update on public.routines for each row execute procedure public.update_updated_at();
 create trigger update_booking_links_updated_at before update on public.booking_links for each row execute procedure public.update_updated_at();
 create trigger update_schedules_updated_at before update on public.schedules for each row execute procedure public.update_updated_at();
+
+-- Prevent double-booking race condition
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+ALTER TABLE bookings ADD CONSTRAINT no_double_booking
+  EXCLUDE USING gist (
+    booking_link_id WITH =,
+    tstzrange(start_time, end_time) WITH &&
+  ) WHERE (status IN ('confirmed', 'pending'));
+
+-- Fix overly permissive booking SELECT policy
+DROP POLICY IF EXISTS "Public can read own bookings by cancel token" ON bookings;
+CREATE POLICY "Booking link owners can read bookings"
+  ON bookings FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM booking_links bl
+      WHERE bl.id = bookings.booking_link_id
+      AND bl.user_id = auth.uid()
+    )
+  );
+
+-- D1+D2: Move sync_token from google_accounts to calendars (per-calendar sync)
+ALTER TABLE calendars ADD COLUMN IF NOT EXISTS sync_token text;
+
+-- Webhook channel mapping table
+CREATE TABLE IF NOT EXISTS webhook_channels (
+  id uuid primary key default gen_random_uuid(),
+  channel_id text unique not null,
+  resource_id text,
+  google_account_id uuid references google_accounts(id) on delete cascade,
+  calendar_id uuid references calendars(id) on delete cascade,
+  token text not null,
+  expiration timestamptz,
+  created_at timestamptz default now()
+);
+
+ALTER TABLE webhook_channels ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own webhook channels" ON webhook_channels
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM google_accounts ga WHERE ga.id = webhook_channels.google_account_id AND ga.user_id = auth.uid())
+  );
+
+-- D8: Change booking_links CASCADE to RESTRICT to prevent accidental booking loss
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_booking_link_id_fkey;
+ALTER TABLE bookings ADD CONSTRAINT bookings_booking_link_id_fkey
+  FOREIGN KEY (booking_link_id) REFERENCES booking_links(id) ON DELETE RESTRICT;

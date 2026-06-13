@@ -70,8 +70,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // Build the update object, omitting the conferencing boolean (not a DB column)
-  const { conferencing, ...dbFields } = input
+  // Extract recurrence scope (not a DB column)
+  // TODO: implement occurrence-level edits when recurrence_id splitting is built
+  const { scope: _recurrenceScope, scope_dates: _scopeDates } = input
+
+  // Build the update object, omitting non-DB fields
+  const { conferencing, scope, scope_dates, ...dbFields } = input
   const updateFields: Record<string, any> = {}
 
   for (const [key, value] of Object.entries(dbFields)) {
@@ -200,6 +204,18 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
   const { userId, supabase } = auth
   const { id } = await params
+
+  // Extract optional recurrence scope from request body
+  // TODO: implement occurrence-level deletes when recurrence_id splitting is built
+  let _deleteScope: string | undefined
+  let _deleteScopeDates: string[] | undefined
+  try {
+    const body = await request.json()
+    _deleteScope = body?.scope
+    _deleteScopeDates = body?.scope_dates
+  } catch {
+    // DELETE with no body is fine — defaults to deleting the whole event
+  }
 
   // Fetch the event to verify ownership and get Google IDs
   const { data: event, error: fetchError } = await supabase

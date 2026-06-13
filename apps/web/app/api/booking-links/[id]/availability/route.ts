@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { rateLimit } from '@/lib/rate-limit'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -23,7 +24,9 @@ function getServiceClient() {
 }
 
 function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
+  const parts = time.split(':').map(Number)
+  const hours = parts[0] ?? 0
+  const minutes = parts[1] ?? 0
   return hours * 60 + minutes
 }
 
@@ -35,7 +38,10 @@ function minutesToTime(minutes: number): string {
 
 function getDayOfWeek(dateStr: string): string {
   // Parse as local date to get the correct day name
-  const [year, month, day] = dateStr.split('-').map(Number)
+  const parts = dateStr.split('-').map(Number)
+  const year = parts[0]!
+  const month = parts[1]!
+  const day = parts[2]!
   const date = new Date(year, month - 1, day)
   return date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
 }
@@ -99,9 +105,12 @@ function generateSlotsForWindow(
 }
 
 function addDays(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split('-').map(Number)
+  const parts = dateStr.split('-').map(Number)
+  const year = parts[0]!
+  const month = parts[1]!
+  const day = parts[2]!
   const d = new Date(year, month - 1, day + days)
-  return d.toISOString().split('T')[0]
+  return d.toISOString().split('T')[0]!
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -111,6 +120,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const { searchParams } = request.nextUrl
   const startDate = searchParams.get('start')
   const endDate = searchParams.get('end')
+
+  // Rate limit: 30 requests per minute per IP
+  const clientIp = request.headers.get('x-forwarded-for') ?? 'unknown'
+  if (!rateLimit(`availability:${clientIp}:${id}`, 30, 60000)) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
 
   if (!startDate || !endDate) {
     return NextResponse.json(
@@ -135,6 +150,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     .single()
 
   if (linkError || !link) {
+    return NextResponse.json(
+      { error: 'Booking link not found' },
+      { status: 404 }
+    )
+  }
+
+  if (!link.is_public) {
     return NextResponse.json(
       { error: 'Booking link not found' },
       { status: 404 }

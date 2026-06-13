@@ -1,4 +1,4 @@
-import type { CalendarEvent, Task, Routine } from '@poolendar/types'
+import type { CalendarEvent, Task, Routine, RoutineInstanceStatus } from '@poolendar/types'
 
 export type CalendarItemType = 'event' | 'task' | 'routine'
 
@@ -15,4 +15,6 @@ export interface CalendarItemData {
   task?: Task
   subtaskProgress?: { completed: number; total: number } | null
   routine?: Routine
+  /** Status of the routine instance for this day (populated by CalendarGrid) */
+  routineInstanceStatus?: RoutineInstanceStatus
 }

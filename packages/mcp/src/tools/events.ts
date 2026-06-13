@@ -210,6 +210,18 @@ export function getEventToolDefinitions(): ToolDefinition[] {
         required: ['id'],
       },
     },
+    {
+      name: 'rsvp_event',
+      description: 'Respond to an event invitation (accept, decline, or tentative)',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          event_id: { type: 'string', description: 'Event ID' },
+          response: { type: 'string', enum: ['accepted', 'declined', 'tentative'], description: 'RSVP response' },
+        },
+        required: ['event_id', 'response'],
+      },
+    },
   ]
 }
 
@@ -217,8 +229,8 @@ export function getEventToolHandlers(client: PoolendarClient): Record<string, To
   return {
     list_events: async (args) => {
       const events = await client.listEvents({
-        start: args.start as string | undefined,
-        end: args.end as string | undefined,
+        start: (args.start as string | undefined) ?? new Date().toISOString(),
+        end: (args.end as string | undefined) ?? new Date(Date.now() + 7 * 86400000).toISOString(),
         calendar_id: args.calendar_id as string | undefined,
       })
       return JSON.stringify(events, null, 2)
@@ -236,10 +248,15 @@ export function getEventToolHandlers(client: PoolendarClient): Record<string, To
         location: args.location as string | undefined,
         visibility: args.visibility as 'busy' | 'free' | undefined,
         privacy: args.privacy as 'public' | 'private' | undefined,
-        attendees: args.attendees as { email: string; name?: string }[] | undefined,
+        attendees: args.attendees
+          ? (args.attendees as { email: string; name?: string }[]).map((a) => ({
+              ...a,
+              response_status: 'needsAction' as const,
+            }))
+          : undefined,
         recurrence_rule: args.recurrence_rule as string | undefined,
         reminders: args.reminders as { minutes_before: number }[] | undefined,
-        conferencing_url: args.conferencing ? 'generate' : undefined,
+        ...(args.conferencing ? { conferencing: true } : {}),
       })
       return JSON.stringify(event, null, 2)
     },
@@ -251,10 +268,9 @@ export function getEventToolHandlers(client: PoolendarClient): Record<string, To
 
     update_event: async (args) => {
       const { id, ...data } = args as Record<string, unknown>
-      // Map conferencing boolean to conferencing_url field
+      // Map conferencing boolean to the API's conferencing field
       if ('conferencing' in data) {
-        data.conferencing_url = data.conferencing ? 'generate' : null
-        delete data.conferencing
+        data.conferencing = data.conferencing ? true : false
       }
       const event = await client.updateEvent(id as string, data)
       return JSON.stringify(event, null, 2)
@@ -263,6 +279,11 @@ export function getEventToolHandlers(client: PoolendarClient): Record<string, To
     delete_event: async (args) => {
       await client.deleteEvent(args.id as string)
       return JSON.stringify({ success: true, message: 'Event deleted successfully.' })
+    },
+
+    rsvp_event: async (args) => {
+      const result = await client.rsvpEvent(args.event_id as string, { response: args.response as 'accepted' | 'declined' | 'tentative' })
+      return JSON.stringify(result, null, 2)
     },
   }
 }

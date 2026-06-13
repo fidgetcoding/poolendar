@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { bookSlotSchema } from '@poolendar/validators'
 import { createGoogleEvent } from '../../../../../lib/google/calendar'
+import { rateLimit } from '@/lib/rate-limit'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -28,7 +29,9 @@ function getDayOfWeek(date: Date, timezone: string): string {
 }
 
 function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
+  const parts = time.split(':').map(Number)
+  const hours = parts[0] ?? 0
+  const minutes = parts[1] ?? 0
   return hours * 60 + minutes
 }
 
@@ -91,6 +94,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   const input = parsed.data
+
+  // Rate limit: 5 bookings per minute per IP
+  const clientIp = request.headers.get('x-forwarded-for') ?? 'unknown'
+  if (!rateLimit(`book:${clientIp}:${id}`, 5, 60000)) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
 
   // Look up booking link
   const { data: link, error: linkError } = await supabase
@@ -244,11 +253,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     .single()
 
   if (insertError) {
+    // Handle double-booking race condition (unique constraint violation)
+    if (insertError.code === '23P01') {
+      return NextResponse.json(
+        { error: 'Time slot no longer available' },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { error: 'Failed to create booking' },
       { status: 500 }
     )
   }
 
-  return NextResponse.json(booking, { status: 201 })
+  // Strip cancel_token from the response — it should only be delivered via email
+  const { cancel_token: _ct, ...safeBooking } = booking
+  return NextResponse.json(safeBooking, { status: 201 })
 }

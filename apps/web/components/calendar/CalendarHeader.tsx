@@ -1,6 +1,7 @@
 'use client'
 
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import * as React from 'react'
+import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react'
 import {
   format,
   startOfWeek,
@@ -9,27 +10,61 @@ import {
   isSameYear,
 } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { Select, type SelectOption } from '../ui/Select'
+import { Popover } from '../ui/Popover'
+import { Checkbox } from '../ui/Checkbox'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type CalendarView = 'day' | 'week' | '2weeks' | 'month' | 'custom'
 
 interface CalendarHeaderProps {
   currentDate: Date
-  view: 'day' | 'week' | 'month'
+  view: CalendarView | 'day' | 'week' | 'month'
+  customDays?: number
   onToday: () => void
   onPrev: () => void
   onNext: () => void
-  onViewChange: (view: 'day' | 'week' | 'month') => void
+  onViewChange: (view: CalendarView) => void
+  /** Display setting toggles */
+  showWeekends?: boolean
+  dimPastEvents?: boolean
+  showDeclinedEvents?: boolean
+  showCompletedTasks?: boolean
+  onShowWeekendsChange?: (show: boolean) => void
+  onDimPastEventsChange?: (dim: boolean) => void
+  onShowDeclinedEventsChange?: (show: boolean) => void
+  onShowCompletedTasksChange?: (show: boolean) => void
 }
 
-const VIEW_OPTIONS: { value: 'day' | 'week' | 'month'; label: string }[] = [
+// ---------------------------------------------------------------------------
+// View options for the Select dropdown
+// ---------------------------------------------------------------------------
+
+const VIEW_OPTIONS: SelectOption[] = [
   { value: 'day', label: 'Day' },
   { value: 'week', label: 'Week' },
+  { value: '2weeks', label: '2 Weeks' },
   { value: 'month', label: 'Month' },
+  { value: 'custom', label: 'Custom' },
 ]
 
-function formatDateLabel(date: Date, view: 'day' | 'week' | 'month'): string {
+// ---------------------------------------------------------------------------
+// Date label formatting
+// ---------------------------------------------------------------------------
+
+function formatDateLabel(
+  date: Date,
+  view: CalendarView | 'day' | 'week' | 'month'
+): string {
   switch (view) {
     case 'day':
       return format(date, 'EEEE, MMMM d, yyyy')
-    case 'week': {
+    case 'week':
+    case '2weeks':
+    case 'custom': {
       const weekStart = startOfWeek(date, { weekStartsOn: 0 })
       const weekEnd = endOfWeek(date, { weekStartsOn: 0 })
       if (!isSameYear(weekStart, weekEnd)) {
@@ -45,28 +80,59 @@ function formatDateLabel(date: Date, view: 'day' | 'week' | 'month'): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// CalendarHeader
+// ---------------------------------------------------------------------------
+
 export function CalendarHeader({
   currentDate,
   view,
+  customDays,
   onToday,
   onPrev,
   onNext,
   onViewChange,
+  showWeekends,
+  dimPastEvents,
+  showDeclinedEvents,
+  showCompletedTasks,
+  onShowWeekendsChange,
+  onDimPastEventsChange,
+  onShowDeclinedEventsChange,
+  onShowCompletedTasksChange,
 }: CalendarHeaderProps) {
+  const settingsButtonRef = React.useRef<HTMLButtonElement>(null)
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+
+  // Map the current view to the select value, adding custom label info
+  const selectValue = view
+
+  function handleViewSelect(value: string) {
+    onViewChange(value as CalendarView)
+  }
+
+  // Build options with custom day count annotation
+  const options: SelectOption[] = VIEW_OPTIONS.map((opt) => {
+    if (opt.value === 'custom' && customDays) {
+      return { ...opt, label: `Custom (${customDays}d)` }
+    }
+    return opt
+  })
+
   return (
     <div
       className={cn(
-        'flex items-center justify-between px-4 py-3',
+        'flex items-center justify-between px-2 py-2 md:px-4 md:py-3',
         'bg-[var(--surface)] border-b border-[var(--border)]',
         'select-none'
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5 md:gap-3">
         <button
           type="button"
           onClick={onToday}
           className={cn(
-            'text-sm font-medium text-[var(--fg)]',
+            'text-xs md:text-sm font-medium text-[var(--fg)]',
             'hover:underline underline-offset-4',
             'transition-all duration-150'
           )}
@@ -74,19 +140,19 @@ export function CalendarHeader({
           Today
         </button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 md:gap-1">
           <button
             type="button"
             onClick={onPrev}
             aria-label="Previous"
             className={cn(
-              'flex items-center justify-center w-8 h-8 rounded-md',
+              'flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-md',
               'text-[var(--muted)] hover:text-[var(--fg)]',
               'hover:bg-[var(--surface-hover)]',
               'transition-colors duration-150'
             )}
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft className="w-4 h-4 md:w-[18px] md:h-[18px]" />
           </button>
 
           <button
@@ -94,47 +160,89 @@ export function CalendarHeader({
             onClick={onNext}
             aria-label="Next"
             className={cn(
-              'flex items-center justify-center w-8 h-8 rounded-md',
+              'flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-md',
               'text-[var(--muted)] hover:text-[var(--fg)]',
               'hover:bg-[var(--surface-hover)]',
               'transition-colors duration-150'
             )}
           >
-            <ChevronRight size={18} />
+            <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px]" />
           </button>
         </div>
 
-        <h2 className="text-lg font-semibold text-[var(--fg)]">
+        <h2 className="text-sm md:text-lg font-semibold text-[var(--fg)] truncate max-w-[140px] md:max-w-none">
           {formatDateLabel(currentDate, view)}
         </h2>
       </div>
 
-      <div
-        className={cn(
-          'flex items-center rounded-lg',
-          'border border-[var(--border)]',
-          'overflow-hidden'
-        )}
-      >
-        {VIEW_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onViewChange(option.value)}
-            className={cn(
-              'relative px-4 py-1.5 text-sm font-medium',
-              'transition-colors duration-150',
-              view === option.value
-                ? 'text-[var(--accent)] bg-[var(--surface-hover)]'
-                : 'text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)]'
-            )}
-          >
-            {option.label}
-            {view === option.value && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--accent)]" />
-            )}
-          </button>
-        ))}
+      <div className="flex items-center gap-1 md:gap-2">
+        {/* View selector dropdown -- hidden on mobile, icon only */}
+        <Select
+          options={options}
+          value={selectValue}
+          onChange={handleViewSelect}
+          aria-label="Calendar view"
+          className="hidden md:block w-[140px]"
+        />
+
+        {/* Display settings gear button */}
+        <button
+          ref={settingsButtonRef}
+          type="button"
+          onClick={() => setSettingsOpen((o) => !o)}
+          aria-label="Display settings"
+          className={cn(
+            'flex items-center justify-center w-8 h-8 rounded-md',
+            'transition-colors duration-150',
+            settingsOpen
+              ? 'text-[var(--accent)] bg-[var(--surface-hover)]'
+              : 'text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)]'
+          )}
+        >
+          <Settings2 size={18} />
+        </button>
+
+        <Popover
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          anchorRef={settingsButtonRef}
+          position="bottom"
+          className="w-[220px]"
+        >
+          <div className="p-3 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Display
+            </p>
+
+            <Checkbox
+              label="Show weekends"
+              checked={showWeekends ?? true}
+              onCheckedChange={(checked) => onShowWeekendsChange?.(checked)}
+            />
+
+            <Checkbox
+              label="Dim past events"
+              checked={dimPastEvents ?? true}
+              onCheckedChange={(checked) => onDimPastEventsChange?.(checked)}
+            />
+
+            <Checkbox
+              label="Show declined events"
+              checked={showDeclinedEvents ?? false}
+              onCheckedChange={(checked) =>
+                onShowDeclinedEventsChange?.(checked)
+              }
+            />
+
+            <Checkbox
+              label="Show completed tasks"
+              checked={showCompletedTasks ?? false}
+              onCheckedChange={(checked) =>
+                onShowCompletedTasksChange?.(checked)
+              }
+            />
+          </div>
+        </Popover>
       </div>
     </div>
   )

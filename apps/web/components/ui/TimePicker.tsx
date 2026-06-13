@@ -42,9 +42,9 @@ function parse12HourTime(timeStr: string): {
   const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
   if (match) {
     return {
-      hour: match[1].padStart(2, '0'),
-      minute: match[2],
-      period: match[3].toUpperCase() as 'AM' | 'PM',
+      hour: match[1]!.padStart(2, '0'),
+      minute: match[2]!,
+      period: match[3]!.toUpperCase() as 'AM' | 'PM',
     }
   }
   return { hour: '12', minute: '00', period: 'AM' }
@@ -54,8 +54,8 @@ function parse24HourTime(timeStr: string): { hour: string; minute: string } {
   const match = timeStr.match(/^(\d{1,2}):(\d{2})$/)
   if (match) {
     return {
-      hour: match[1].padStart(2, '0'),
-      minute: match[2],
+      hour: match[1]!.padStart(2, '0'),
+      minute: match[2]!,
     }
   }
   return { hour: '00', minute: '00' }

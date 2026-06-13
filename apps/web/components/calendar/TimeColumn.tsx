@@ -29,20 +29,20 @@ export function TimeColumn({
 
   return (
     <div
-      className={cn('relative shrink-0', 'select-none')}
-      style={{ width: 60, height: totalHeight }}
+      className={cn('relative shrink-0 w-10 md:w-[60px]', 'select-none')}
+      style={{ height: totalHeight }}
     >
       {hours.map((hour) => (
         <div
           key={hour}
-          className="absolute right-0 pr-3"
+          className="absolute right-0 pr-1.5 md:pr-3"
           style={{
             top: (hour - startHour) * hourHeight,
             transform: 'translateY(-50%)',
           }}
         >
           {hour !== startHour && (
-            <span className="text-xs text-[var(--muted)] whitespace-nowrap">
+            <span className="text-[10px] md:text-xs text-[var(--muted)] whitespace-nowrap">
               {formatHourLabel(hour)}
             </span>
           )}

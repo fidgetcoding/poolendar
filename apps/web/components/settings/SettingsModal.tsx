@@ -1,13 +1,35 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Globe, Calendar, Bell, Key, User } from 'lucide-react'
+import {
+  X,
+  ChevronLeft,
+  Keyboard,
+  CalendarDays,
+  Video,
+  Send,
+  Settings,
+  Tag,
+  Layers,
+  Clock,
+  ExternalLink,
+  User,
+  Key,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { GeneralTab } from './GeneralTab'
 import { CalendarsTab } from './CalendarsTab'
 import { NotificationsTab } from './NotificationsTab'
 import { AccountTab } from './AccountTab'
 import { ApiKeyManager } from './ApiKeyManager'
+import { ShortcutsTab } from './ShortcutsTab'
+import { TagsTab } from './TagsTab'
+import { FramesTab } from './FramesTab'
+import { AvailabilityTab } from './AvailabilityTab'
+import { BookingPagesTab } from './BookingPagesTab'
+import { VideoConferencingTab } from './VideoConferencingTab'
+import { TelegramTab } from './TelegramTab'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type {
@@ -20,11 +42,18 @@ import type {
 } from '@poolendar/types'
 
 type SettingsTab =
-  | 'general'
+  | 'shortcuts'
   | 'calendars'
+  | 'video'
+  | 'telegram'
+  | 'general'
   | 'notifications'
+  | 'tags'
+  | 'frames'
+  | 'availability'
+  | 'booking'
+  | 'profile'
   | 'api-keys'
-  | 'account'
 
 interface SettingsModalProps {
   open: boolean
@@ -75,13 +104,58 @@ const DEFAULT_SETTINGS: UserSettings = {
   booking_page_show_poolendar_branding: true,
 }
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Globe }[] = [
-  { id: 'general', label: 'General', icon: Globe },
-  { id: 'calendars', label: 'Calendars', icon: Calendar },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'api-keys', label: 'API Keys', icon: Key },
-  { id: 'account', label: 'Account', icon: User },
+interface NavItem {
+  key: SettingsTab
+  label: string
+  icon: typeof Settings
+}
+
+interface NavSection {
+  label: string
+  items: NavItem[]
+}
+
+const SETTINGS_SECTIONS: NavSection[] = [
+  {
+    label: 'Explore',
+    items: [{ key: 'shortcuts', label: 'Shortcuts', icon: Keyboard }],
+  },
+  {
+    label: 'Integrations',
+    items: [
+      { key: 'calendars', label: 'Calendars', icon: CalendarDays },
+      { key: 'video', label: 'Video Conferencing', icon: Video },
+      { key: 'telegram', label: 'Telegram', icon: Send },
+    ],
+  },
+  {
+    label: 'Preferences',
+    items: [
+      { key: 'general', label: 'General', icon: Settings },
+      { key: 'notifications', label: 'Notifications', icon: Settings },
+      { key: 'tags', label: 'Tags', icon: Tag },
+      { key: 'frames', label: 'Frames', icon: Layers },
+      { key: 'availability', label: 'Availability', icon: Clock },
+      { key: 'booking', label: 'Booking Pages', icon: ExternalLink },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { key: 'profile', label: 'Profile', icon: User },
+      { key: 'api-keys', label: 'API Keys', icon: Key },
+    ],
+  },
 ]
+
+function findTabLabel(tab: SettingsTab): string {
+  for (const section of SETTINGS_SECTIONS) {
+    for (const item of section.items) {
+      if (item.key === tab) return item.label
+    }
+  }
+  return ''
+}
 
 export function SettingsModal({
   open,
@@ -90,7 +164,7 @@ export function SettingsModal({
   onProfileUpdate,
 }: SettingsModalProps) {
   const supabase = createClient()
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('shortcuts')
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([])
   const [calendars, setCalendars] = useState<CalendarType[]>([])
@@ -211,19 +285,23 @@ export function SettingsModal({
   }
 
   async function handleDisconnectAccount(accountId: string) {
-    const { error } = await supabase
-      .from('google_accounts')
-      .delete()
-      .eq('id', accountId)
+    try {
+      const res = await fetch(`/api/google/disconnect/${accountId}`, {
+        method: 'DELETE',
+      })
 
-    if (error) {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to disconnect account')
+        return
+      }
+
+      setGoogleAccounts((a) => a.filter((acc) => acc.id !== accountId))
+      setCalendars((c) => c.filter((cal) => cal.google_account_id !== accountId))
+      toast.success('Account disconnected')
+    } catch {
       toast.error('Failed to disconnect account')
-      return
     }
-
-    setGoogleAccounts((a) => a.filter((acc) => acc.id !== accountId))
-    setCalendars((c) => c.filter((cal) => cal.google_account_id !== accountId))
-    toast.success('Account disconnected')
   }
 
   async function toggleCalendar(calendarId: string, isActive: boolean) {
@@ -258,8 +336,8 @@ export function SettingsModal({
     if (!doubleConfirmed) return
 
     try {
-      const { error } = await supabase.auth.admin.deleteUser(profile.id)
-      if (error) {
+      const res = await fetch('/api/auth/delete-account', { method: 'DELETE' })
+      if (!res.ok) {
         toast.error('Failed to delete account. Contact support.')
         return
       }
@@ -283,6 +361,8 @@ export function SettingsModal({
 
   if (!open) return null
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(true)
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -291,37 +371,104 @@ export function SettingsModal({
         onClick={() => onOpenChange(false)}
       />
 
-      {/* Modal */}
-      <div className="relative flex h-[85vh] w-full max-w-3xl overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
-        {/* Left sidebar nav */}
-        <div className="flex w-48 flex-shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] p-3">
-          <h2 className="mb-4 px-3 text-sm font-semibold text-[var(--fg)]">
+      {/* Modal -- full-screen on mobile, centered card on desktop */}
+      <div className="relative flex flex-col md:flex-row h-full md:h-[85vh] w-full md:max-w-3xl overflow-hidden md:rounded-xl border-0 md:border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        {/* Mobile: top nav with back-button pattern */}
+        <div className="flex md:hidden items-center gap-2 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg)]">
+          {!mobileNavOpen && (
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--fg)] transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Settings
+            </button>
+          )}
+          {mobileNavOpen && (
+            <h2 className="flex-1 text-sm font-semibold text-[var(--fg)]">Settings</h2>
+          )}
+          <button
+            onClick={() => onOpenChange(false)}
+            className="ml-auto rounded p-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
+            aria-label="Close settings"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Mobile: nav list or content, never both */}
+        {mobileNavOpen && (
+          <div className="flex md:hidden flex-1 flex-col overflow-y-auto bg-[var(--bg)] p-3">
+            <nav className="flex flex-col gap-3">
+              {SETTINGS_SECTIONS.map((section) => (
+                <div key={section.label}>
+                  <div className="px-3 py-1 text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider">
+                    {section.label}
+                  </div>
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    {section.items.map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => {
+                          setActiveTab(item.key)
+                          setMobileNavOpen(false)
+                        }}
+                        className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          activeTab === item.key
+                            ? 'bg-[var(--surface)] text-[var(--fg)] font-medium'
+                            : 'text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]'
+                        }`}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        )}
+
+        {/* Desktop: left sidebar nav */}
+        <div className="hidden md:flex w-52 flex-shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] p-3 overflow-y-auto">
+          <h2 className="mb-3 px-3 text-sm font-semibold text-[var(--fg)]">
             Settings
           </h2>
-          <nav className="flex flex-col gap-0.5">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-[var(--surface)] text-[var(--fg)] font-medium'
-                    : 'text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]'
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-              </button>
+          <nav className="flex flex-col gap-3">
+            {SETTINGS_SECTIONS.map((section) => (
+              <div key={section.label}>
+                <div className="px-3 py-1 text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider">
+                  {section.label}
+                </div>
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  {section.items.map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => setActiveTab(item.key)}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                        activeTab === item.key
+                          ? 'bg-[var(--surface)] text-[var(--fg)] font-medium'
+                          : 'text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]'
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </nav>
         </div>
 
-        {/* Right content */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Right content -- shown on desktop always, on mobile only when nav is closed */}
+        <div className={cn('flex-1 flex-col overflow-hidden', mobileNavOpen ? 'hidden md:flex' : 'flex')}>
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-3">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-4 md:px-6 py-3">
             <h3 className="text-sm font-semibold text-[var(--fg)]">
-              {TABS.find((t) => t.id === activeTab)?.label}
+              {findTabLabel(activeTab)}
             </h3>
             <div className="flex items-center gap-2">
               <Button
@@ -342,11 +489,9 @@ export function SettingsModal({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="space-y-8">
-              {activeTab === 'general' && (
-                <GeneralTab settings={settings} onChange={updateSettings} />
-              )}
+              {activeTab === 'shortcuts' && <ShortcutsTab />}
               {activeTab === 'calendars' && (
                 <CalendarsTab
                   googleAccounts={googleAccounts}
@@ -356,6 +501,13 @@ export function SettingsModal({
                   onToggleCalendar={toggleCalendar}
                 />
               )}
+              {activeTab === 'video' && <VideoConferencingTab />}
+              {activeTab === 'telegram' && (
+                <TelegramTab settings={settings} onChange={updateSettings} />
+              )}
+              {activeTab === 'general' && (
+                <GeneralTab settings={settings} onChange={updateSettings} />
+              )}
               {activeTab === 'notifications' && (
                 <NotificationsTab
                   settings={settings}
@@ -363,13 +515,11 @@ export function SettingsModal({
                   onNotificationChange={updateNotifications}
                 />
               )}
-              {activeTab === 'api-keys' && (
-                <ApiKeyManager
-                  apiKeys={apiKeys}
-                  onKeysChange={setApiKeys}
-                />
-              )}
-              {activeTab === 'account' && (
+              {activeTab === 'tags' && <TagsTab />}
+              {activeTab === 'frames' && <FramesTab />}
+              {activeTab === 'availability' && <AvailabilityTab />}
+              {activeTab === 'booking' && <BookingPagesTab />}
+              {activeTab === 'profile' && (
                 <AccountTab
                   profile={profile}
                   displayName={displayName}
@@ -379,6 +529,12 @@ export function SettingsModal({
                   onUsernameChange={setUsername}
                   onCompanyChange={setCompany}
                   onDeleteAccount={handleDeleteAccount}
+                />
+              )}
+              {activeTab === 'api-keys' && (
+                <ApiKeyManager
+                  apiKeys={apiKeys}
+                  onKeysChange={setApiKeys}
                 />
               )}
             </div>

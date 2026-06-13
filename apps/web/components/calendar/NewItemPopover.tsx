@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 interface NewItemPopoverProps {
   date: Date
   startTime: Date
+  endTime?: Date
   anchorRect: DOMRect | null
   onClose: () => void
   onQuickCreate: (title: string, type: 'event' | 'task') => void
@@ -43,6 +44,7 @@ function computePopoverPosition(anchor: DOMRect): { top: number; left: number } 
 
 export function NewItemPopover({
   startTime,
+  endTime: endTimeProp,
   anchorRect,
   onClose,
   onQuickCreate,
@@ -105,7 +107,7 @@ export function NewItemPopover({
 
   if (!isMounted || !anchorRect) return null
 
-  const endTime = new Date(startTime.getTime() + 30 * 60 * 1000)
+  const endTime = endTimeProp ?? new Date(startTime.getTime() + 15 * 60 * 1000)
   const timeLabel = `${format(startTime, 'h:mm a')} - ${format(endTime, 'h:mm a')}`
   const position = computePopoverPosition(anchorRect)
 

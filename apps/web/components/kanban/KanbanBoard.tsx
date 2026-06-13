@@ -6,6 +6,7 @@ import {
   DragOverlay,
   closestCorners,
   PointerSensor,
+  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -13,7 +14,7 @@ import {
   type DragEndEvent,
   type DragOverEvent,
 } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type {
   Task,
   TaskStatus,
@@ -74,7 +75,12 @@ export function KanbanBoard({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
     }),
-    useSensor(KeyboardSensor)
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 300, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
   )
 
   // Board-level counts (unfiltered, for the switcher badges)
@@ -131,15 +137,14 @@ export function KanbanBoard({
     return grouped
   }, [filteredTasks])
 
-  // Build parent title lookup for breadcrumb badges
+  // Build parent title lookup for breadcrumb badges (O(n) via Map)
   const parentTitles = useMemo(() => {
     const map: Record<string, string> = {}
+    const taskMap = new Map(tasks.map(t => [t.id, t]))
     for (const task of tasks) {
       if (task.parent_id) {
-        const parent = tasks.find((t) => t.id === task.parent_id)
-        if (parent) {
-          map[parent.id] = parent.title
-        }
+        const parent = taskMap.get(task.parent_id)
+        if (parent) map[parent.id] = parent.title
       }
     }
     return map
@@ -277,13 +282,14 @@ export function KanbanBoard({
       {/* Kanban columns */}
       <div className="flex-1 overflow-x-auto p-4">
         <DndContext
+          id="kanban-dnd"
           sensors={sensors}
           collisionDetection={closestCorners}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-4 h-full min-w-max">
+          <div className="flex gap-4 h-full min-w-max md:min-w-0 overflow-x-auto snap-x snap-mandatory md:snap-none">
             {COLUMN_ORDER.map((status) => (
               <KanbanColumn
                 key={status}
@@ -315,7 +321,7 @@ export function KanbanBoard({
  */
 function calculatePosition(tasks: Task[], index: number): number {
   if (tasks.length === 0) return 1000
-  if (tasks.length === 1) return tasks[0].position ?? 1000
+  if (tasks.length === 1) return tasks[0]!.position ?? 1000
 
   const prev = index > 0 ? tasks[index - 1] : null
   const next = index < tasks.length - 1 ? tasks[index + 1] : null
@@ -337,17 +343,17 @@ function calculateInsertPosition(
   if (destTasks.length === 0) return 1000
 
   if (insertIndex === 0) {
-    const firstPos = destTasks[0].position ?? 1000
+    const firstPos = destTasks[0]!.position ?? 1000
     return firstPos / 2
   }
 
   if (insertIndex >= destTasks.length) {
-    const lastPos = destTasks[destTasks.length - 1].position ?? 1000
+    const lastPos = destTasks[destTasks.length - 1]!.position ?? 1000
     return lastPos + 1000
   }
 
-  const prevPos = destTasks[insertIndex - 1].position ?? 0
-  const nextPos = destTasks[insertIndex].position ?? prevPos + 2000
+  const prevPos = destTasks[insertIndex - 1]!.position ?? 0
+  const nextPos = destTasks[insertIndex]!.position ?? prevPos + 2000
 
   return (prevPos + nextPos) / 2
 }

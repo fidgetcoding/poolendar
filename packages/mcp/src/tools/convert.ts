@@ -52,6 +52,8 @@ export function getConvertToolHandlers(client: PoolendarClient): Record<string, 
         source_type: args.source_type as string,
         source_id: args.source_id as string,
         target_type: args.target_type as string,
+        ...(args.calendar_id ? { calendar_id: args.calendar_id as string } : {}),
+        ...(args.repeat_pattern ? { repeat_pattern: args.repeat_pattern as string } : {}),
       })
       return JSON.stringify(result, null, 2)
     },

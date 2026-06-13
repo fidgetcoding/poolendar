@@ -10,7 +10,7 @@ export const createBookingLinkSchema = z.object({
   slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
   name: z.string().min(1).max(200),
   duration_minutes: z.number().int().positive(),
-  availability: z.array(weeklyAvailabilitySchema).min(1),
+  availability: z.array(weeklyAvailabilitySchema).min(1).max(28),
   timezone: z.string().default('America/New_York'),
   google_account_id: z.string().uuid().nullable().optional(),
   conferencing: z.boolean().default(true),

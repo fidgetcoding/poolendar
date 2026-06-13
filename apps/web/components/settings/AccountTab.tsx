@@ -1,9 +1,11 @@
 'use client'
 
-import { User, Trash2 } from 'lucide-react'
+import * as React from 'react'
+import { User, Trash2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SettingsSection } from './SettingsSection'
+import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@poolendar/types'
 
 interface AccountTabProps {
@@ -27,6 +29,21 @@ export function AccountTab({
   onCompanyChange,
   onDeleteAccount,
 }: AccountTabProps) {
+  const [email, setEmail] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? null)
+    })
+  }, [])
+
+  async function handleSignOut() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = '/login'
+  }
+
   return (
     <>
       <SettingsSection title="Profile">
@@ -51,6 +68,17 @@ export function AccountTab({
             </p>
           </div>
         </div>
+
+        {email && (
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">
+              Email
+            </label>
+            <p className="text-sm text-[var(--fg)] rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 opacity-70">
+              {email}
+            </p>
+          </div>
+        )}
 
         <Input
           label="Display name"
@@ -80,6 +108,21 @@ export function AccountTab({
           onChange={(e) => onCompanyChange(e.target.value)}
           placeholder="Your company (optional)"
         />
+      </SettingsSection>
+
+      <SettingsSection title="Session">
+        <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg)] p-4">
+          <div>
+            <p className="text-sm font-medium text-[var(--fg)]">Sign Out</p>
+            <p className="text-xs text-[var(--muted)]">
+              Sign out of your account on this device
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleSignOut}>
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Danger Zone">

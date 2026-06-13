@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CalendarEvent, Task, Routine } from '@poolendar/types'
+import { RecurrenceEditDialog, type RecurrenceEditScope } from './RecurrenceEditDialog'
 
 type PreviewItem = {
   type: 'event' | 'task' | 'routine'
@@ -31,8 +32,8 @@ interface PreviewPopoverProps {
   item: PreviewItem
   anchorRect: DOMRect | null
   onClose: () => void
-  onEdit: () => void
-  onDelete: () => void
+  onEdit: (scope?: RecurrenceEditScope) => void
+  onDelete: (scope?: RecurrenceEditScope) => void
   onComplete?: () => void
   onSkip?: () => void
 }
@@ -117,6 +118,49 @@ export function PreviewPopover({
 }: PreviewPopoverProps) {
   const popoverRef = React.useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = React.useState(false)
+  const [recurrenceDialog, setRecurrenceDialog] = React.useState<{
+    isOpen: boolean
+    mode: 'edit' | 'delete'
+  }>({ isOpen: false, mode: 'edit' })
+
+  // Determine if this item is recurring
+  const isRecurring = React.useMemo(() => {
+    if (item.type === 'event' && item.event?.recurrence_rule) return true
+    if (item.type === 'routine' && item.routine?.recurrence_rule) return true
+    return false
+  }, [item])
+
+  const itemTitle = React.useMemo(() => {
+    if (item.type === 'event' && item.event) return item.event.title
+    if (item.type === 'task' && item.task) return item.task.title
+    if (item.type === 'routine' && item.routine) return item.routine.title
+    return ''
+  }, [item])
+
+  function handleEditClick() {
+    if (isRecurring) {
+      setRecurrenceDialog({ isOpen: true, mode: 'edit' })
+    } else {
+      onEdit()
+    }
+  }
+
+  function handleDeleteClick() {
+    if (isRecurring) {
+      setRecurrenceDialog({ isOpen: true, mode: 'delete' })
+    } else {
+      onDelete()
+    }
+  }
+
+  function handleRecurrenceScopeSelect(scope: RecurrenceEditScope) {
+    setRecurrenceDialog({ isOpen: false, mode: recurrenceDialog.mode })
+    if (recurrenceDialog.mode === 'edit') {
+      onEdit(scope)
+    } else {
+      onDelete(scope)
+    }
+  }
 
   React.useEffect(() => {
     setIsMounted(true)
@@ -126,12 +170,17 @@ export function PreviewPopover({
   React.useEffect(() => {
     function handleEscape(e: KeyboardEvent) {
       if (e.key === 'Escape') {
+        if (recurrenceDialog.isOpen) {
+          setRecurrenceDialog({ isOpen: false, mode: recurrenceDialog.mode })
+          return
+        }
         e.stopPropagation()
         onClose()
       }
     }
 
     function handleClickOutside(e: MouseEvent) {
+      if (recurrenceDialog.isOpen) return
       if (
         popoverRef.current &&
         !popoverRef.current.contains(e.target as Node)
@@ -146,7 +195,7 @@ export function PreviewPopover({
       document.removeEventListener('keydown', handleEscape)
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [onClose])
+  }, [onClose, recurrenceDialog.isOpen, recurrenceDialog.mode])
 
   if (!isMounted || !anchorRect) return null
 
@@ -174,12 +223,17 @@ export function PreviewPopover({
   } else if (item.type === 'routine' && item.routine) {
     const r = item.routine
     title = r.title
-    const startParts = r.start_time.split(':')
-    const endParts = r.end_time.split(':')
+    const parseTimeString = (timeStr: string): [number, number] => {
+      const timePart = timeStr.includes('T') ? timeStr.split('T')[1]! : timeStr
+      const [h, m] = timePart.split(':').map(Number)
+      return [h || 0, m || 0]
+    }
+    const [startH, startM] = parseTimeString(r.start_time)
+    const [endH, endM] = parseTimeString(r.end_time)
     const startDate = new Date()
-    startDate.setHours(parseInt(startParts[0], 10) || 0, parseInt(startParts[1], 10) || 0)
+    startDate.setHours(startH, startM, 0, 0)
     const endDate = new Date()
-    endDate.setHours(parseInt(endParts[0], 10) || 0, parseInt(endParts[1], 10) || 0)
+    endDate.setHours(endH, endM, 0, 0)
     timeRange = `${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}`
     location = r.location
   }
@@ -284,6 +338,22 @@ export function PreviewPopover({
                 total={item.task.subtasks.length}
               />
             )}
+            {item.task.tags && item.task.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {item.task.tags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                    style={{
+                      backgroundColor: `${tag.color}33`,
+                      color: tag.color,
+                    }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -300,7 +370,7 @@ export function PreviewPopover({
       <div className="flex items-center gap-1 px-3 py-2 border-t border-[var(--border)]">
         <button
           type="button"
-          onClick={onEdit}
+          onClick={handleEditClick}
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm',
             'text-[var(--fg)] hover:bg-[var(--surface-hover)]',
@@ -361,7 +431,7 @@ export function PreviewPopover({
 
         <button
           type="button"
-          onClick={onDelete}
+          onClick={handleDeleteClick}
           className={cn(
             'flex items-center justify-center w-8 h-8 rounded-md',
             'text-[var(--muted)] hover:text-[var(--destructive)]',
@@ -372,6 +442,15 @@ export function PreviewPopover({
           <Trash2 size={14} />
         </button>
       </div>
+
+      {/* Recurrence scope dialog for recurring items */}
+      <RecurrenceEditDialog
+        isOpen={recurrenceDialog.isOpen}
+        onClose={() => setRecurrenceDialog({ isOpen: false, mode: recurrenceDialog.mode })}
+        onSelect={handleRecurrenceScopeSelect}
+        itemTitle={itemTitle}
+        mode={recurrenceDialog.mode}
+      />
     </div>,
     document.body
   )
