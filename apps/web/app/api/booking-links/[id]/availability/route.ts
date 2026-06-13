@@ -1,6 +1,10 @@
+// SERVICE ROLE: Required — public endpoint (no auth). External visitors query
+// availability by booking-link ID without logging in, so there is no user
+// session.  The service client bypasses RLS to read booking_links, bookings,
+// and events on behalf of the link owner.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitAsync } from '@/lib/rate-limit'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -123,7 +127,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   // Rate limit: 30 requests per minute per IP
   const clientIp = request.headers.get('x-forwarded-for') ?? 'unknown'
-  if (!rateLimit(`availability:${clientIp}:${id}`, 30, 60000)) {
+  if (!(await rateLimitAsync(`availability:${clientIp}:${id}`, 30, 60000))) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 

@@ -82,7 +82,7 @@ function makeRequest(method: string, body?: unknown, url = 'http://localhost/api
     init.body = JSON.stringify(body)
     init.headers = { 'Content-Type': 'application/json' }
   }
-  return new NextRequest(url, init)
+  return new NextRequest(url, init as ConstructorParameters<typeof NextRequest>[1])
 }
 
 const VALID_FRAME = {

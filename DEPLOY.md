@@ -27,11 +27,13 @@
    | `SUPABASE_SERVICE_ROLE_KEY` | from Supabase | Server only |
    | `GOOGLE_CLIENT_ID` | from GCP console | Server only |
    | `GOOGLE_CLIENT_SECRET` | from GCP console | Server only |
-   | `GOOGLE_REDIRECT_URI` | `https://poolendar.com/api/auth/google/callback` | Server only |
+   | `GOOGLE_WEBHOOK_SECRET` | random secret for Google Calendar push webhooks | Server only |
+   | `ANTHROPIC_API_KEY` | from Anthropic (optional, for LLM auto-schedule) | Server only |
    | `RESEND_API_KEY` | from Resend | Server only |
-   | `RESEND_FROM_EMAIL` | `noreply@poolendar.com` | Server only |
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | VAPID public key for push notifications | Client + Server |
+   | `VAPID_PRIVATE_KEY` | VAPID private key for push notifications | Server only |
+   | `CRON_SECRET` | random secret for Vercel cron job auth | Server only |
    | `NEXT_PUBLIC_APP_URL` | `https://poolendar.com` | Client + Server |
-   | `NEXT_PUBLIC_BOOKING_DOMAIN` | `poolendar.com` | Client + Server |
 
 5. Deploy. Vercel will run `npm install` then `cd apps/web && npm run build`.
 

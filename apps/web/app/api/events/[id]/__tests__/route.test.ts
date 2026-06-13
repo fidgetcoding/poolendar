@@ -37,10 +37,10 @@ const TEST_EVENT_ID = '00000000-0000-4000-8000-000000000010'
 function createRequest(method: string, url: string, body?: unknown): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'), {
     method,
-    ...(body && {
+    ...(body ? {
       body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json' },
-    }),
+    } : {}),
   })
 }
 

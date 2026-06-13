@@ -492,7 +492,7 @@ describe('Google Calendar Sync', () => {
         expect.objectContaining({ summary: 'My version' }) // local takes precedence
       )
       // Read-only fields should be stripped from the merged payload
-      const mergedPayload = mockUpdateGoogleEvent.mock.calls[0][3]
+      const mergedPayload = mockUpdateGoogleEvent.mock.calls[0]![3]
       expect(mergedPayload.kind).toBeUndefined()
       expect(mergedPayload.htmlLink).toBeUndefined()
       expect(mergedPayload.created).toBeUndefined()
@@ -532,7 +532,7 @@ describe('Google Calendar Sync', () => {
       const result = await pushEvent(event, calendar)
 
       // Verify the conferencing URL was stored
-      const updateCall = mockUpdateFn.mock.calls[0][0]
+      const updateCall = mockUpdateFn.mock.calls[0]![0]
       expect(updateCall.conferencing_url).toBe('https://meet.google.com/xyz')
     })
   })

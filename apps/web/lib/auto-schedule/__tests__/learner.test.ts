@@ -147,7 +147,7 @@ describe('recordCorrection', () => {
     )
 
     expect(supabase._qb.upsert).toHaveBeenCalled()
-    const upsertCall = supabase._qb.upsert.mock.calls[0]
+    const upsertCall = supabase._qb.upsert.mock.calls[0]!
     const upsertData = upsertCall[0]
     expect(upsertData).toMatchObject({
       user_id: 'user-1',

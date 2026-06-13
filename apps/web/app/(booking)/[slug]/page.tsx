@@ -254,8 +254,8 @@ export default function BookingPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
         <div className="text-center">
-          <div className="mb-3 text-4xl">💩</div>
-          <p className="text-sm text-[var(--muted)]">Loading booking page...</p>
+          <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[var(--muted)] border-t-[var(--accent)]" />
+          <p className="text-sm text-[var(--muted)]">Loading...</p>
         </div>
       </div>
     )
@@ -433,8 +433,7 @@ export default function BookingPage() {
           <div className="mt-6 text-center">
             <p className="text-xs text-[var(--muted)]">
               Powered by{' '}
-              <span className="font-medium text-[var(--fg)]">Poolendar</span>{' '}
-              💩
+              <span className="font-medium text-[var(--fg)]">Poolendar</span>
             </p>
           </div>
         )}

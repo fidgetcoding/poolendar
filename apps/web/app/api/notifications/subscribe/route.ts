@@ -1,3 +1,7 @@
+// SERVICE ROLE: Not needed — authenticated endpoint. Uses the session user's
+// client (RLS-scoped) so each user can only manage their own push_subscriptions.
+// API-key auth falls back to service role inside authenticate(), which is
+// acceptable since the API key already verified the user's identity.
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError } from '../../../../lib/auth/helpers'
 import { z } from 'zod'

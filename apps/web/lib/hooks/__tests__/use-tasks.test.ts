@@ -99,10 +99,10 @@ describe('useTasks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(1)
-    expect(result.current.data![0].title).toBe('Write tests')
+    expect(result.current.data![0]!.title).toBe('Write tests')
     // Tags should be flattened from task_tags join
-    expect(result.current.data![0].tags).toHaveLength(1)
-    expect(result.current.data![0].tags![0].name).toBe('Work')
+    expect(result.current.data![0]!.tags).toHaveLength(1)
+    expect(result.current.data![0]!.tags![0]!.name).toBe('Work')
 
     queryClient.clear()
   })
@@ -117,7 +117,7 @@ describe('useTasks', () => {
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data![0].status).toBe('in_progress')
+    expect(result.current.data![0]!.status).toBe('in_progress')
 
     queryClient.clear()
   })
@@ -132,7 +132,7 @@ describe('useTasks', () => {
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data![0].board).toBe('future')
+    expect(result.current.data![0]!.board).toBe('future')
 
     queryClient.clear()
   })

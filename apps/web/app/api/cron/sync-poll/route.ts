@@ -1,3 +1,6 @@
+// SERVICE ROLE: Required — cron job runs unauthenticated (Vercel Cron),
+// needs cross-user access to google_accounts to find stale accounts and
+// trigger incremental sync for each.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { pullChanges } from '@/lib/google/sync'
@@ -18,6 +21,8 @@ function getServiceClient() {
 
 /** Accounts not synced within this window are considered stale. */
 const STALE_THRESHOLD_MINUTES = 10
+
+export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {

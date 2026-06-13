@@ -69,8 +69,8 @@ describe('useEvents', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(2)
-    expect(result.current.data![0].title).toBe('Standup')
-    expect(result.current.data![1].title).toBe('Lunch')
+    expect(result.current.data![0]!.title).toBe('Standup')
+    expect(result.current.data![1]!.title).toBe('Lunch')
 
     // Verify supabase.from was called with 'events'
     expect(mockSupabaseClient.from).toHaveBeenCalledWith('events')

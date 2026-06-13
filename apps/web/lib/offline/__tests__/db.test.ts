@@ -206,14 +206,14 @@ describe('PoolendarDB - interface shapes', () => {
 
 describe('PoolendarDB - index coverage', () => {
   it('events table indexes support user+time range queries', () => {
-    const call = mockStores.mock.calls[0][0]
+    const call = mockStores.mock.calls[0]![0]
     expect(call.events).toContain('[user_id+start_time]')
     expect(call.events).toContain('[user_id+end_time]')
     expect(call.events).toContain('calendar_id')
   })
 
   it('tasks table indexes support board queries and date filters', () => {
-    const call = mockStores.mock.calls[0][0]
+    const call = mockStores.mock.calls[0]![0]
     expect(call.tasks).toContain('[user_id+status+board]')
     expect(call.tasks).toContain('[user_id+scheduled_start]')
     expect(call.tasks).toContain('[user_id+due_date]')
@@ -221,13 +221,13 @@ describe('PoolendarDB - index coverage', () => {
   })
 
   it('subtasks table indexes support task lookup', () => {
-    const call = mockStores.mock.calls[0][0]
+    const call = mockStores.mock.calls[0]![0]
     expect(call.subtasks).toContain('task_id')
     expect(call.subtasks).toContain('[task_id+position]')
   })
 
   it('mutationQueue uses auto-increment id and timestamp index', () => {
-    const call = mockStores.mock.calls[0][0]
+    const call = mockStores.mock.calls[0]![0]
     expect(call.mutationQueue).toContain('++id')
     expect(call.mutationQueue).toContain('timestamp')
   })

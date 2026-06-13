@@ -1,3 +1,6 @@
+// SERVICE ROLE: Required — cron job runs unauthenticated (Vercel Cron),
+// needs cross-user access to profiles, tasks, and frames to run the
+// auto-scheduling pipeline for every opted-in user.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { runSchedulingPipeline } from '@/lib/auto-schedule/pipeline'
@@ -21,6 +24,8 @@ const MIN_INTERVAL_MS = 5 * 60 * 60_000
 
 /** Default scheduling window in days. */
 const WINDOW_DAYS = 7
+
+export const maxDuration = 120
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {

@@ -49,7 +49,7 @@ export function mockSupabaseError(error: unknown) {
 export function mockSupabaseResults(...results: MockResult[]) {
   if (results.length === 0) return
   resultQueue = [...results]
-  stickyResult = results[results.length - 1]
+  stickyResult = results[results.length - 1]!
 }
 
 function dequeueResult(): MockResult {

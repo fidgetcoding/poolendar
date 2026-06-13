@@ -165,7 +165,7 @@ describe('classifyByLLM', () => {
     )
 
     const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-      .calls[0]
+      .calls[0]!
     const body = JSON.parse(fetchCall[1].body as string)
     const userContent = body.messages[0].content as string
 
@@ -179,7 +179,7 @@ describe('classifyByLLM', () => {
     await classifyByLLM('File taxes', null, frames, 'sk-test-123')
 
     const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-      .calls[0]
+      .calls[0]!
     const [url, options] = fetchCall
 
     expect(url).toBe('https://api.anthropic.com/v1/messages')

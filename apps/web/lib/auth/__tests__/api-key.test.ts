@@ -163,7 +163,7 @@ describe('authenticateApiKey', () => {
     await authenticateApiKey(request)
 
     expect(mockUpdateCall).toHaveBeenCalledTimes(1)
-    const updateArg = mockUpdateCall.mock.calls[0][0]
+    const updateArg = mockUpdateCall.mock.calls[0]![0]
     expect(updateArg).toHaveProperty('last_used_at')
     // Verify it's a valid ISO timestamp
     expect(new Date(updateArg.last_used_at).toISOString()).toBe(updateArg.last_used_at)

@@ -96,5 +96,15 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
   }
 
-  return NextResponse.json(profile)
+  const safeProfile = { ...profile }
+  if (safeProfile.settings && typeof safeProfile.settings === 'object') {
+    const s = { ...(safeProfile.settings as Record<string, unknown>) }
+    const hasTelegramToken = Boolean(s.telegram_bot_token)
+    const hasTelegramChat = Boolean(s.telegram_chat_id)
+    delete s.telegram_bot_token
+    delete s.telegram_chat_id
+    s.telegram_configured = hasTelegramToken && hasTelegramChat
+    safeProfile.settings = s
+  }
+  return NextResponse.json(safeProfile)
 }

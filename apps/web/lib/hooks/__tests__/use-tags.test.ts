@@ -57,8 +57,8 @@ describe('useTags', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(2)
-    expect(result.current.data![0].name).toBe('Work')
-    expect(result.current.data![1].name).toBe('Personal')
+    expect(result.current.data![0]!.name).toBe('Work')
+    expect(result.current.data![1]!.name).toBe('Personal')
 
     queryClient.clear()
   })

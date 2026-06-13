@@ -47,7 +47,7 @@ export async function sendEmailNotification(
 ): Promise<boolean> {
   try {
     const { error } = await resend.emails.send({
-      from: 'Poolendar <noreply@poolendar.com>',
+      from: process.env.RESEND_FROM_EMAIL || 'Poolendar <noreply@poolendar.com>',
       to,
       subject: payload.title,
       html: buildHtml(payload),

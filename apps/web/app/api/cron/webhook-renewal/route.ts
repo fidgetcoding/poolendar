@@ -1,3 +1,6 @@
+// SERVICE ROLE: Required — cron job runs unauthenticated (Vercel Cron),
+// needs cross-user access to google_accounts and calendars to renew webhook
+// channels for every connected user.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { watchGoogleCalendar, getGoogleAccessToken } from '@/lib/google/calendar'
@@ -18,6 +21,8 @@ function getServiceClient() {
 
 /** Webhook TTL is 7 days; renew when less than 1 day remains. */
 const RENEWAL_THRESHOLD_MS = 6 * 24 * 60 * 60_000 // 6 days
+
+export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {

@@ -1,3 +1,5 @@
+// SERVICE ROLE: Required — cron job runs unauthenticated (Vercel Cron),
+// needs cross-user access to events/tasks/routines/push_subscriptions.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
@@ -28,6 +30,43 @@ function dedupKey(type: string, id: string, minBefore: number, startIso: string)
   return `${type}:${id}:${minBefore}:${bucket}`
 }
 
+/** Check whether a dedup key has already been recorded in `sent_reminders`. */
+async function alreadySent(
+  supabase: ReturnType<typeof getServiceClient>,
+  key: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('sent_reminders')
+    .select('id')
+    .eq('dedup_key', key)
+    .limit(1)
+    .single()
+  return !!data
+}
+
+/** Record a dedup key after successfully sending a reminder. */
+async function markSent(
+  supabase: ReturnType<typeof getServiceClient>,
+  key: string,
+): Promise<void> {
+  await supabase
+    .from('sent_reminders')
+    .upsert({ dedup_key: key }, { onConflict: 'dedup_key' })
+}
+
+/** Delete dedup entries older than 24 hours. */
+async function cleanupStaleEntries(
+  supabase: ReturnType<typeof getServiceClient>,
+): Promise<void> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
+  await supabase
+    .from('sent_reminders')
+    .delete()
+    .lt('sent_at', cutoff)
+}
+
+export const maxDuration = 60
+
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -37,8 +76,10 @@ export async function GET(request: NextRequest) {
     const supabase = getServiceClient()
     const now = new Date()
     const windowEnd = new Date(now.getTime() + 60 * 60_000)
-    const sentKeys = new Set<string>()
     let processed = 0
+
+    // Garbage-collect stale dedup rows before processing
+    await cleanupStaleEntries(supabase)
 
     // --- Events ---
     const { data: events } = await supabase
@@ -53,8 +94,7 @@ export async function GET(request: NextRequest) {
       for (const r of (ev.reminders as { minutes_before: number }[]) ?? []) {
         if (!isReminderDue(ev.start_time, r.minutes_before, now)) continue
         const key = dedupKey('event', ev.id, r.minutes_before, ev.start_time)
-        if (sentKeys.has(key)) continue
-        sentKeys.add(key)
+        if (await alreadySent(supabase, key)) continue
         await dispatchNotification(supabase, ev.user_id, {
           title: `Event ${minutesLabel(r.minutes_before)}`,
           body: ev.title,
@@ -63,6 +103,7 @@ export async function GET(request: NextRequest) {
           data: { event_id: ev.id, minutes_before: r.minutes_before,
             location: ev.location, conferencing_url: ev.conferencing_url },
         })
+        await markSent(supabase, key)
         processed++
       }
     }
@@ -81,14 +122,14 @@ export async function GET(request: NextRequest) {
       for (const r of (t.reminders as { minutes_before: number }[]) ?? []) {
         if (!isReminderDue(ref, r.minutes_before, now)) continue
         const key = dedupKey('task', t.id, r.minutes_before, ref)
-        if (sentKeys.has(key)) continue
-        sentKeys.add(key)
+        if (await alreadySent(supabase, key)) continue
         await dispatchNotification(supabase, t.user_id, {
           title: `Task due ${minutesLabel(r.minutes_before)}`,
           body: t.title,
           event: 'task_reminder',
           data: { task_id: t.id, minutes_before: r.minutes_before },
         })
+        await markSent(supabase, key)
         processed++
       }
     }
@@ -117,8 +158,7 @@ export async function GET(request: NextRequest) {
       for (const r of routine.reminders) {
         if (!isReminderDue(fullStart, r.minutes_before, now)) continue
         const key = dedupKey('routine', inst.id, r.minutes_before, fullStart)
-        if (sentKeys.has(key)) continue
-        sentKeys.add(key)
+        if (await alreadySent(supabase, key)) continue
         await dispatchNotification(supabase, routine.user_id, {
           title: `Routine ${minutesLabel(r.minutes_before)}`,
           body: routine.title,
@@ -126,6 +166,7 @@ export async function GET(request: NextRequest) {
           data: { routine_id: routine.id, instance_id: inst.id,
             minutes_before: r.minutes_before },
         })
+        await markSent(supabase, key)
         processed++
       }
     }

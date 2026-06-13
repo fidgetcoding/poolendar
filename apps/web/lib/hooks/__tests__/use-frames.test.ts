@@ -67,8 +67,8 @@ describe('useFrames', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(2)
-    expect(result.current.data![0].name).toBe('Deep Work')
-    expect(result.current.data![1].name).toBe('Admin')
+    expect(result.current.data![0]!.name).toBe('Deep Work')
+    expect(result.current.data![1]!.name).toBe('Admin')
 
     queryClient.clear()
   })

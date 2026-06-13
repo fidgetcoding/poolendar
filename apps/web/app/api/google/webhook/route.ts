@@ -1,10 +1,13 @@
+// SERVICE ROLE: Required — webhook endpoint called by Google, not by an
+// authenticated user.  Needs cross-user access to google_accounts, calendars,
+// and events to sync changes for any connected user.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import {
   getGoogleAccessToken,
   googleCalendarRequest,
 } from '../../../../lib/google/calendar'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitAsync } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   // Google push notifications include these headers
@@ -28,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Rate limit: 60 webhook calls per minute per channel
-  if (!rateLimit(`webhook:${channelId}`, 60, 60000)) {
+  if (!(await rateLimitAsync(`webhook:${channelId}`, 60, 60000))) {
     return new NextResponse(null, { status: 429 })
   }
 

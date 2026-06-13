@@ -16,10 +16,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Query parameter q must not exceed 200 characters' }, { status: 400 })
   }
 
+  // Sanitize: commas and parens in PostgREST .or() filter values can
+  // inject additional filter expressions. Strip them.
+  const safeQ = q.replace(/[,()]/g, '')
+  if (!safeQ) {
+    return NextResponse.json({ error: 'Query contains only special characters' }, { status: 400 })
+  }
+
   const typesParam = searchParams.get('types')
   const types = typesParam ? typesParam.split(',') : ['event', 'task', 'routine', 'booking_link']
   const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50)
-  const pattern = `%${q}%`
+  const pattern = `%${safeQ}%`
 
   const seen = new Set<string>()
   const results: { type: string; id: string; title: string; date: string | null; snippet: string | null }[] = []

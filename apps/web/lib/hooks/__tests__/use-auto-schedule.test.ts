@@ -141,7 +141,7 @@ describe('useAutoSchedulePreview', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data?.placements).toHaveLength(1)
-    expect(result.current.data?.placements[0].task_title).toBe('Write tests')
+    expect(result.current.data?.placements[0]!.task_title).toBe('Write tests')
 
     expect(fetch).toHaveBeenCalledWith('/api/auto-schedule/preview', {
       method: 'POST',

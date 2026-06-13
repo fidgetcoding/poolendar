@@ -409,7 +409,7 @@ export function useCompleteTask() {
       const { data, error } = await supabase
         .from('tasks')
         .update({
-          status: 'completed' as TaskStatus,
+          status: 'done' as TaskStatus,
           completed_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -440,7 +440,7 @@ export function useCompleteTask() {
           old
             ? old.map((t) =>
                 t.id === id
-                  ? { ...t, status: 'completed' as TaskStatus, completed_at: new Date().toISOString() }
+                  ? { ...t, status: 'done' as TaskStatus, completed_at: new Date().toISOString() }
                   : t,
               )
             : old,

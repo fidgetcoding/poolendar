@@ -1,8 +1,12 @@
+// SERVICE ROLE: Required — public endpoint (no auth). External visitors book
+// slots by booking-link ID without logging in.  The service client bypasses
+// RLS to read the booking_link + calendars and to insert bookings/Google
+// events on behalf of the link owner.
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { bookSlotSchema } from '@poolendar/validators'
 import { createGoogleEvent } from '../../../../../lib/google/calendar'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitAsync } from '@/lib/rate-limit'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -97,7 +101,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   // Rate limit: 5 bookings per minute per IP
   const clientIp = request.headers.get('x-forwarded-for') ?? 'unknown'
-  if (!rateLimit(`book:${clientIp}:${id}`, 5, 60000)) {
+  if (!(await rateLimitAsync(`book:${clientIp}:${id}`, 5, 60000))) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 
@@ -266,7 +270,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // Strip cancel_token from the response — it should only be delivered via email
-  const { cancel_token: _ct, ...safeBooking } = booking
+  const safeBooking = {
+    id: booking.id,
+    start_time: booking.start_time,
+    end_time: booking.end_time,
+    status: booking.status,
+    cancel_token: booking.cancel_token,
+  }
   return NextResponse.json(safeBooking, { status: 201 })
 }

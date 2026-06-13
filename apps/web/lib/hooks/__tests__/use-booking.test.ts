@@ -88,7 +88,7 @@ describe('useBookingLinks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(2)
-    expect(result.current.data![0].name).toBe('Intro Call')
+    expect(result.current.data![0]!.name).toBe('Intro Call')
 
     queryClient.clear()
   })
@@ -310,7 +310,7 @@ describe('useBookings', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toHaveLength(2)
-    expect(result.current.data![0].booker_name).toBe('Jane Doe')
+    expect(result.current.data![0]!.booker_name).toBe('Jane Doe')
 
     queryClient.clear()
   })

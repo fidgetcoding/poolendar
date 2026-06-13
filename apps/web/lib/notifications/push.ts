@@ -4,7 +4,7 @@ import type { NotificationPayload, PushSubscriptionRecord } from './types'
 
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
-    'mailto:support@poolendar.com',
+    process.env.VAPID_SUBJECT || 'mailto:support@poolendar.com',
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   )

@@ -332,8 +332,8 @@ describe('runSchedulingPipeline', () => {
     )
 
     expect(result.placements).toHaveLength(1)
-    expect(result.placements[0].task_id).toBe('t1')
-    expect(result.placements[0].frame_name).toBe('Deep Work')
+    expect(result.placements[0]!.task_id).toBe('t1')
+    expect(result.placements[0]!.frame_name).toBe('Deep Work')
     expect(result.message).toBeUndefined()
   })
 
