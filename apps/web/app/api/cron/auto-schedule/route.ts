@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
       .select('id, settings')
-      .filter('settings->auto_schedule_enabled', 'eq', true)
+      .filter('settings->>auto_schedule_enabled', 'eq', 'true')
 
     if (profilesError) {
       return NextResponse.json(
