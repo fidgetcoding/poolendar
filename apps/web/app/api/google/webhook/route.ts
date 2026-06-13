@@ -46,14 +46,21 @@ export async function POST(request: NextRequest) {
     }
   )
 
-  // Find all Google accounts and sync incrementally
-  // TODO: Add a webhook_channel_id column to google_accounts and create a mapping table
-  // to associate channel IDs with specific accounts. For now, we sync all accounts but
-  // at least verify the webhook token above.
-  const { data: accounts } = await supabase
+  // Filter to the account that owns this webhook channel.
+  // Falls back to syncing all accounts if no match (pre-migration data).
+  const { data: channelAccount } = await supabase
     .from('google_accounts')
     .select('id, user_id, sync_token')
+    .eq('webhook_channel_id', channelId)
     .not('sync_token', 'is', null)
+    .single()
+
+  const { data: accounts } = channelAccount
+    ? { data: [channelAccount] }
+    : await supabase
+        .from('google_accounts')
+        .select('id, user_id, sync_token')
+        .not('sync_token', 'is', null)
 
   if (!accounts || accounts.length === 0) {
     return new NextResponse(null, { status: 200 })

@@ -246,9 +246,10 @@ export default function BookingPage() {
     }
   }
 
-  // Brand accent color from host settings
-  const brandColor =
-    hostProfile?.booking_page_brand_color || '#f9a825'
+  const brandAccent = hostProfile?.booking_page_brand_color || undefined
+  const accentStyle = brandAccent
+    ? ({ '--accent': brandAccent } as React.CSSProperties)
+    : undefined
 
   if (step === 'loading') {
     return (
@@ -276,7 +277,7 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] px-4 py-12">
+    <div className="min-h-screen bg-[var(--bg)] px-4 py-12" style={accentStyle}>
       <div className="mx-auto max-w-lg">
         {/* Host info header */}
         <div className="mb-8 text-center">

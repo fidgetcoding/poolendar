@@ -16,7 +16,7 @@
 ## 2. Vercel Setup
 
 1. Import repo from GitHub (`fidgetcoding/poolendar`).
-2. Set **Root Directory** to `apps/web`.
+2. Leave **Root Directory** as repository root (monorepo auto-detected by Turborepo).
 3. Set **Framework Preset** to `Next.js`.
 4. Add environment variables (all from `.env.example`):
 
@@ -35,7 +35,7 @@
    | `CRON_SECRET` | random secret for Vercel cron job auth | Server only |
    | `NEXT_PUBLIC_APP_URL` | `https://poolendar.com` | Client + Server |
 
-5. Deploy. Vercel will run `npm install` then `cd apps/web && npm run build`.
+5. Deploy. Vercel will run `pnpm install` then `turbo run build --filter=@poolendar/web`.
 
 ## 3. DNS: Squarespace to Vercel
 
