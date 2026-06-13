@@ -1,0 +1,18 @@
+import type { CalendarEvent, Task, Routine } from '@poolendar/types'
+
+export type CalendarItemType = 'event' | 'task' | 'routine'
+
+export interface CalendarItemData {
+  id: string
+  type: CalendarItemType
+  title: string
+  startTime: Date
+  endTime: Date
+  color: string
+  isAllDay?: boolean
+  location?: string | null
+  event?: CalendarEvent
+  task?: Task
+  subtaskProgress?: { completed: number; total: number } | null
+  routine?: Routine
+}

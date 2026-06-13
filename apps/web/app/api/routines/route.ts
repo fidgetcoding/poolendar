@@ -1,0 +1,77 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { authenticate, isAuthError, validationError } from '../../../lib/auth/helpers'
+import { createRoutineSchema } from '@poolendar/validators'
+
+export async function GET(request: NextRequest) {
+  const auth = await authenticate(request)
+  if (isAuthError(auth)) return auth
+
+  const { userId, supabase } = auth
+
+  const { data, error } = await supabase
+    .from('routines')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return NextResponse.json(
+      { error: 'Failed to fetch routines' },
+      { status: 500 }
+    )
+  }
+
+  return NextResponse.json(data)
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await authenticate(request)
+  if (isAuthError(auth)) return auth
+
+  const { userId, supabase } = auth
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    )
+  }
+
+  const parsed = createRoutineSchema.safeParse(body)
+  if (!parsed.success) {
+    return validationError(parsed.error.issues)
+  }
+
+  const input = parsed.data
+
+  const { data, error } = await supabase
+    .from('routines')
+    .insert({
+      user_id: userId,
+      calendar_id: input.calendar_id ?? null,
+      title: input.title,
+      notes: input.notes ?? null,
+      start_time: input.start_time,
+      end_time: input.end_time,
+      timezone: input.timezone,
+      recurrence_rule: input.recurrence_rule,
+      location: input.location ?? null,
+      visibility: input.visibility,
+      privacy: input.privacy,
+      reminders: input.reminders,
+    })
+    .select()
+    .single()
+
+  if (error || !data) {
+    return NextResponse.json(
+      { error: 'Failed to create routine' },
+      { status: 500 }
+    )
+  }
+
+  return NextResponse.json(data, { status: 201 })
+}

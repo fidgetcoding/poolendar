@@ -1,0 +1,268 @@
+'use client'
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { CalendarEvent } from '@poolendar/types'
+import { createClient } from '@/lib/supabase/client'
+
+// ---------------------------------------------------------------------------
+// Query-key factory
+// ---------------------------------------------------------------------------
+
+export const eventKeys = {
+  all: ['events'] as const,
+  lists: () => [...eventKeys.all, 'list'] as const,
+  list: (start: string, end: string, calendarId?: string) =>
+    [...eventKeys.lists(), { start, end, calendarId }] as const,
+  detail: (id: string) => [...eventKeys.all, 'detail', id] as const,
+}
+
+// ---------------------------------------------------------------------------
+// Input types
+// ---------------------------------------------------------------------------
+
+type CreateEventInput = Omit<CalendarEvent, 'id' | 'created_at' | 'updated_at'>
+
+type UpdateEventInput = {
+  id: string
+  data: Partial<Omit<CalendarEvent, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
+}
+
+// ---------------------------------------------------------------------------
+// useEvents — list events in a time range
+// ---------------------------------------------------------------------------
+
+export function useEvents(start: string, end: string, calendarId?: string) {
+  const supabase = createClient()
+
+  return useQuery({
+    queryKey: eventKeys.list(start, end, calendarId),
+    queryFn: async (): Promise<CalendarEvent[]> => {
+      let query = supabase
+        .from('events')
+        .select('*')
+        .gte('start_time', start)
+        .lte('end_time', end)
+        .order('start_time', { ascending: true })
+
+      if (calendarId) {
+        query = query.eq('calendar_id', calendarId)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      return data as CalendarEvent[]
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useEvent — single event detail
+// ---------------------------------------------------------------------------
+
+export function useEvent(id: string) {
+  const supabase = createClient()
+
+  return useQuery({
+    queryKey: eventKeys.detail(id),
+    queryFn: async (): Promise<CalendarEvent> => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (error) throw error
+      return data as CalendarEvent
+    },
+    enabled: !!id,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useCreateEvent
+// ---------------------------------------------------------------------------
+
+export function useCreateEvent() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: CreateEventInput): Promise<CalendarEvent> => {
+      const { data, error } = await supabase
+        .from('events')
+        .insert(input)
+        .select('*')
+        .single()
+
+      if (error) throw error
+      return data as CalendarEvent
+    },
+
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: eventKeys.lists() })
+
+      const previous = queryClient.getQueriesData<CalendarEvent[]>({
+        queryKey: eventKeys.lists(),
+      })
+
+      const tempId = crypto.randomUUID()
+      const optimistic: CalendarEvent = {
+        ...input,
+        id: tempId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      queryClient.setQueriesData<CalendarEvent[]>(
+        { queryKey: eventKeys.lists() },
+        (old) => (old ? [...old, optimistic] : [optimistic]),
+      )
+
+      return { previous, tempId }
+    },
+
+    onSuccess: (real, _input, context) => {
+      if (!context) return
+      // Replace the temp-id entry with the real record
+      queryClient.setQueriesData<CalendarEvent[]>(
+        { queryKey: eventKeys.lists() },
+        (old) =>
+          old
+            ? old.map((e) => (e.id === context.tempId ? real : e))
+            : [real],
+      )
+    },
+
+    onError: (_err, _input, context) => {
+      if (!context?.previous) return
+      for (const [key, data] of context.previous) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: eventKeys.lists() })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useUpdateEvent
+// ---------------------------------------------------------------------------
+
+export function useUpdateEvent() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, data }: UpdateEventInput): Promise<CalendarEvent> => {
+      const { data: updated, error } = await supabase
+        .from('events')
+        .update(data)
+        .eq('id', id)
+        .select('*')
+        .single()
+
+      if (error) throw error
+      return updated as CalendarEvent
+    },
+
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: eventKeys.lists() })
+      await queryClient.cancelQueries({ queryKey: eventKeys.detail(id) })
+
+      const previous = queryClient.getQueriesData<CalendarEvent[]>({
+        queryKey: eventKeys.lists(),
+      })
+      const previousDetail = queryClient.getQueryData<CalendarEvent>(
+        eventKeys.detail(id),
+      )
+
+      queryClient.setQueriesData<CalendarEvent[]>(
+        { queryKey: eventKeys.lists() },
+        (old) =>
+          old
+            ? old.map((e) =>
+                e.id === id
+                  ? { ...e, ...data, updated_at: new Date().toISOString() }
+                  : e,
+              )
+            : old,
+      )
+
+      if (previousDetail) {
+        queryClient.setQueryData<CalendarEvent>(eventKeys.detail(id), {
+          ...previousDetail,
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+      }
+
+      return { previous, previousDetail, id }
+    },
+
+    onError: (_err, _input, context) => {
+      if (!context) return
+      for (const [key, data] of context.previous) {
+        queryClient.setQueryData(key, data)
+      }
+      if (context.previousDetail) {
+        queryClient.setQueryData(
+          eventKeys.detail(context.id),
+          context.previousDetail,
+        )
+      }
+    },
+
+    onSettled: (_data, _err, { id }) => {
+      queryClient.invalidateQueries({ queryKey: eventKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: eventKeys.detail(id) })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useDeleteEvent
+// ---------------------------------------------------------------------------
+
+export function useDeleteEvent() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      const { error } = await supabase.from('events').delete().eq('id', id)
+      if (error) throw error
+    },
+
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: eventKeys.lists() })
+      await queryClient.cancelQueries({ queryKey: eventKeys.detail(id) })
+
+      const previous = queryClient.getQueriesData<CalendarEvent[]>({
+        queryKey: eventKeys.lists(),
+      })
+
+      queryClient.setQueriesData<CalendarEvent[]>(
+        { queryKey: eventKeys.lists() },
+        (old) => (old ? old.filter((e) => e.id !== id) : old),
+      )
+
+      queryClient.removeQueries({ queryKey: eventKeys.detail(id) })
+
+      return { previous }
+    },
+
+    onError: (_err, _id, context) => {
+      if (!context?.previous) return
+      for (const [key, data] of context.previous) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: eventKeys.lists() })
+    },
+  })
+}

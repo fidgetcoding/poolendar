@@ -1,0 +1,378 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useParams } from 'next/navigation'
+import {
+  format,
+  parseISO,
+  addDays,
+  startOfDay,
+  isSameDay,
+} from 'date-fns'
+import { Clock, Globe } from 'lucide-react'
+import { BookingCalendar } from '@/components/booking-external/BookingCalendar'
+import { TimeSlotGrid } from '@/components/booking-external/TimeSlotGrid'
+import { BookingForm } from '@/components/booking-external/BookingForm'
+import { BookingConfirmation } from '@/components/booking-external/BookingConfirmation'
+import type { BookingLink, AvailabilitySlot } from '@poolendar/types'
+
+type BookingStep = 'loading' | 'date' | 'time' | 'form' | 'confirmed' | 'error'
+
+interface BookingResult {
+  id: string
+  start_time: string
+  end_time: string
+  cancel_token: string
+}
+
+export default function BookingPage() {
+  const params = useParams<{ slug: string }>()
+  const slug = params.slug
+
+  const [step, setStep] = useState<BookingStep>('loading')
+  const [bookingLink, setBookingLink] = useState<BookingLink | null>(null)
+  const [hostProfile, setHostProfile] = useState<{
+    display_name: string
+    avatar_url: string | null
+    booking_page_title: string | null
+    booking_page_brand_color: string | null
+    booking_page_logo_url: string | null
+  } | null>(null)
+  const [availableDates, setAvailableDates] = useState<Date[]>([])
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([])
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
+  const [bookingResult, setBookingResult] = useState<BookingResult | null>(null)
+  const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h')
+  const [detectedTimezone, setDetectedTimezone] = useState('America/New_York')
+  const [loadingSlots, setLoadingSlots] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+
+  // Detect visitor timezone
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      setDetectedTimezone(tz)
+    } catch {
+      // Fallback already set
+    }
+  }, [])
+
+  // Load booking link data
+  useEffect(() => {
+    async function loadBookingLink() {
+      try {
+        // Get the username from the subdomain (set by middleware)
+        // For dev, fall back to query string or just fetch by slug
+        const res = await fetch(`/api/booking/availability/${slug}?info=true`)
+
+        if (!res.ok) {
+          setErrorMessage(
+            res.status === 404
+              ? 'This booking page does not exist.'
+              : 'Something went wrong loading this page.'
+          )
+          setStep('error')
+          return
+        }
+
+        const data = await res.json()
+        setBookingLink(data.booking_link)
+        setHostProfile(data.host)
+
+        // Generate available dates for the next 60 days based on availability pattern
+        const dates: Date[] = []
+        const today = startOfDay(new Date())
+        const availability = data.booking_link.availability || []
+        const dayMap: Record<string, number> = {
+          sunday: 0,
+          monday: 1,
+          tuesday: 2,
+          wednesday: 3,
+          thursday: 4,
+          friday: 5,
+          saturday: 6,
+        }
+
+        const availableDaysOfWeek = new Set(
+          availability.map((a: { day: string }) => dayMap[a.day])
+        )
+
+        for (let i = 0; i < 60; i++) {
+          const date = addDays(today, i)
+          if (availableDaysOfWeek.has(date.getDay())) {
+            dates.push(date)
+          }
+        }
+
+        setAvailableDates(dates)
+        setStep('date')
+      } catch {
+        setErrorMessage('Failed to load booking page.')
+        setStep('error')
+      }
+    }
+
+    if (slug) {
+      loadBookingLink()
+    }
+  }, [slug])
+
+  // Load time slots when a date is selected
+  const loadTimeSlots = useCallback(
+    async (date: Date) => {
+      if (!slug) return
+      setLoadingSlots(true)
+      setAvailableSlots([])
+      setSelectedSlot(null)
+
+      try {
+        const dateStr = format(date, 'yyyy-MM-dd')
+        const res = await fetch(
+          `/api/booking/availability/${slug}?date=${dateStr}&timezone=${encodeURIComponent(detectedTimezone)}`
+        )
+
+        if (res.ok) {
+          const data = await res.json()
+          setAvailableSlots(data.slots || [])
+        }
+      } catch {
+        setAvailableSlots([])
+      } finally {
+        setLoadingSlots(false)
+      }
+    },
+    [slug, detectedTimezone]
+  )
+
+  function handleSelectDate(date: Date) {
+    setSelectedDate(date)
+    setSelectedSlot(null)
+    setStep('time')
+    loadTimeSlots(date)
+  }
+
+  function handleSelectSlot(slot: AvailabilitySlot) {
+    setSelectedSlot(slot)
+    setStep('form')
+  }
+
+  async function handleBooking(data: {
+    name: string
+    email: string
+    notes: string
+  }) {
+    if (!selectedSlot || !slug) return
+
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/booking/book/${slug}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booker_name: data.name,
+          booker_email: data.email,
+          booker_notes: data.notes || null,
+          start_time: selectedSlot.start,
+          end_time: selectedSlot.end,
+          timezone: detectedTimezone,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        setErrorMessage(err.error || 'Failed to book. Please try again.')
+        return
+      }
+
+      const result = await res.json()
+      setBookingResult(result)
+      setStep('confirmed')
+    } catch {
+      setErrorMessage('Network error. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Brand accent color from host settings
+  const brandColor =
+    hostProfile?.booking_page_brand_color || '#f9a825'
+
+  if (step === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+        <div className="text-center">
+          <div className="mb-3 text-4xl">💩</div>
+          <p className="text-sm text-[var(--muted)]">Loading booking page...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'error') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+        <div className="text-center">
+          <div className="mb-3 text-4xl">😕</div>
+          <h1 className="mb-2 text-lg font-semibold text-[var(--fg)]">
+            Page Not Found
+          </h1>
+          <p className="text-sm text-[var(--muted)]">{errorMessage}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-[var(--bg)] px-4 py-12">
+      <div className="mx-auto max-w-lg">
+        {/* Host info header */}
+        <div className="mb-8 text-center">
+          {hostProfile?.booking_page_logo_url ? (
+            <img
+              src={hostProfile.booking_page_logo_url}
+              alt=""
+              className="mx-auto mb-3 h-12 w-12 rounded-full object-cover"
+            />
+          ) : hostProfile?.avatar_url ? (
+            <img
+              src={hostProfile.avatar_url}
+              alt=""
+              className="mx-auto mb-3 h-12 w-12 rounded-full object-cover"
+            />
+          ) : null}
+
+          <h1 className="text-lg font-bold text-[var(--fg)]">
+            {hostProfile?.display_name || 'Book a time'}
+          </h1>
+
+          {bookingLink && (
+            <div className="mt-2">
+              <p className="font-semibold text-[var(--fg)]">
+                {bookingLink.name}
+              </p>
+              <div className="mt-1 flex items-center justify-center gap-3 text-sm text-[var(--muted)]">
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5" />
+                  {bookingLink.duration_minutes} min
+                </span>
+                {bookingLink.location && (
+                  <span>{bookingLink.location}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {bookingLink?.notes && (
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              {bookingLink.notes}
+            </p>
+          )}
+        </div>
+
+        {/* Main booking card */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          {step === 'confirmed' && bookingResult && bookingLink ? (
+            <BookingConfirmation
+              startTime={bookingResult.start_time}
+              endTime={bookingResult.end_time}
+              hostName={hostProfile?.display_name || 'Host'}
+              meetingTitle={bookingLink.name}
+              cancelToken={bookingResult.cancel_token}
+              bookingSlug={slug}
+              timeFormat={timeFormat}
+            />
+          ) : (
+            <>
+              {/* Timezone + time format controls */}
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <Globe className="h-3.5 w-3.5" />
+                  {detectedTimezone.replace(/_/g, ' ')}
+                </div>
+                <div className="flex rounded border border-[var(--border)] bg-[var(--bg)]">
+                  <button
+                    onClick={() => setTimeFormat('12h')}
+                    className={`px-2 py-0.5 text-xs transition-colors ${
+                      timeFormat === '12h'
+                        ? 'bg-[var(--accent)] text-[var(--bg)]'
+                        : 'text-[var(--muted)]'
+                    }`}
+                  >
+                    12h
+                  </button>
+                  <button
+                    onClick={() => setTimeFormat('24h')}
+                    className={`px-2 py-0.5 text-xs transition-colors ${
+                      timeFormat === '24h'
+                        ? 'bg-[var(--accent)] text-[var(--bg)]'
+                        : 'text-[var(--muted)]'
+                    }`}
+                  >
+                    24h
+                  </button>
+                </div>
+              </div>
+
+              {/* Step: Date selection */}
+              {(step === 'date' || step === 'time' || step === 'form') && (
+                <BookingCalendar
+                  availableDates={availableDates}
+                  selectedDate={selectedDate}
+                  onSelectDate={handleSelectDate}
+                />
+              )}
+
+              {/* Step: Time slot selection */}
+              {(step === 'time' || step === 'form') && selectedDate && (
+                <div className="mt-6">
+                  <h3 className="mb-3 text-sm font-semibold text-[var(--fg)]">
+                    {format(selectedDate, 'EEEE, MMMM d')}
+                  </h3>
+                  {loadingSlots ? (
+                    <p className="py-4 text-center text-sm text-[var(--muted)]">
+                      Loading available times...
+                    </p>
+                  ) : (
+                    <TimeSlotGrid
+                      slots={availableSlots}
+                      selectedSlot={selectedSlot}
+                      onSelectSlot={handleSelectSlot}
+                      timeFormat={timeFormat}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Step: Booking form */}
+              {step === 'form' && selectedSlot && (
+                <div className="mt-6 border-t border-[var(--border)] pt-6">
+                  <h3 className="mb-4 text-sm font-semibold text-[var(--fg)]">
+                    Your details
+                  </h3>
+                  <BookingForm
+                    onSubmit={handleBooking}
+                    loading={submitting}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Branding footer */}
+        {hostProfile?.booking_page_title !== null && (
+          <div className="mt-6 text-center">
+            <p className="text-xs text-[var(--muted)]">
+              Powered by{' '}
+              <span className="font-medium text-[var(--fg)]">Poolendar</span>{' '}
+              💩
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

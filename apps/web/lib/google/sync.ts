@@ -1,0 +1,649 @@
+import { createServerClient } from '@supabase/ssr'
+import type { CalendarEvent, Calendar } from '@poolendar/types'
+import {
+  getGoogleAccessToken,
+  googleCalendarRequest,
+  listGoogleEvents,
+  createGoogleEvent,
+  updateGoogleEvent,
+  deleteGoogleEvent,
+} from './calendar'
+
+function getServiceClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      cookies: {
+        getAll() { return [] },
+        setAll() {},
+      },
+    }
+  )
+}
+
+// ─── Field Mappers ───────────────────────────────────────────────────────────
+
+/**
+ * Map a Google Calendar API event to our local events table schema.
+ */
+export function mapGoogleEventToLocal(
+  googleEvent: any,
+  calendarId: string,
+  userId: string
+): Partial<CalendarEvent> {
+  const isAllDay = Boolean(googleEvent.start?.date)
+
+  const startTime = isAllDay
+    ? new Date(googleEvent.start.date + 'T00:00:00').toISOString()
+    : googleEvent.start?.dateTime
+      ? new Date(googleEvent.start.dateTime).toISOString()
+      : new Date().toISOString()
+
+  const endTime = isAllDay
+    ? new Date(googleEvent.end.date + 'T00:00:00').toISOString()
+    : googleEvent.end?.dateTime
+      ? new Date(googleEvent.end.dateTime).toISOString()
+      : new Date().toISOString()
+
+  const timezone =
+    googleEvent.start?.timeZone ??
+    googleEvent.end?.timeZone ??
+    'America/New_York'
+
+  const attendees: CalendarEvent['attendees'] = (
+    googleEvent.attendees ?? []
+  ).map((a: any) => ({
+    email: a.email,
+    name: a.displayName ?? undefined,
+    response_status: a.responseStatus ?? 'needsAction',
+  }))
+
+  const reminders: CalendarEvent['reminders'] =
+    googleEvent.reminders?.overrides?.map((r: any) => ({
+      minutes_before: r.minutes,
+    })) ?? []
+
+  // Google uses "transparent" for free, "opaque" (default) for busy
+  const visibility: 'busy' | 'free' =
+    googleEvent.transparency === 'transparent' ? 'free' : 'busy'
+
+  // Google's visibility field maps to our privacy field
+  const privacy: 'public' | 'private' =
+    googleEvent.visibility === 'private' ||
+    googleEvent.visibility === 'confidential'
+      ? 'private'
+      : 'public'
+
+  // Extract conferencing URL (Google Meet or other)
+  let conferencingUrl: string | null = null
+  if (googleEvent.conferenceData?.entryPoints) {
+    const videoEntry = googleEvent.conferenceData.entryPoints.find(
+      (ep: any) => ep.entryPointType === 'video'
+    )
+    conferencingUrl = videoEntry?.uri ?? null
+  }
+  if (!conferencingUrl && googleEvent.hangoutLink) {
+    conferencingUrl = googleEvent.hangoutLink
+  }
+
+  // Extract recurrence rule (first RRULE line if present)
+  let recurrenceRule: string | null = null
+  if (googleEvent.recurrence?.length) {
+    const rruleLine = googleEvent.recurrence.find((r: string) =>
+      r.startsWith('RRULE:')
+    )
+    recurrenceRule = rruleLine ?? googleEvent.recurrence[0]
+  }
+
+  // Map Google event status
+  let status: CalendarEvent['status'] = 'confirmed'
+  if (googleEvent.status === 'tentative') status = 'tentative'
+  if (googleEvent.status === 'cancelled') status = 'cancelled'
+
+  return {
+    user_id: userId,
+    calendar_id: calendarId,
+    google_event_id: googleEvent.id,
+    title: googleEvent.summary ?? '(No title)',
+    notes: googleEvent.description ?? null,
+    start_time: startTime,
+    end_time: endTime,
+    timezone,
+    is_all_day: isAllDay,
+    location: googleEvent.location ?? null,
+    color_override: googleEvent.colorId ?? null,
+    visibility,
+    privacy,
+    conferencing_url: conferencingUrl,
+    recurrence_rule: recurrenceRule,
+    recurrence_id: googleEvent.recurringEventId ?? null,
+    attendees,
+    reminders,
+    status,
+    sync_status: 'synced' as const,
+    etag: googleEvent.etag ?? null,
+  }
+}
+
+/**
+ * Map our local event to Google Calendar API format.
+ */
+export function mapLocalEventToGoogle(event: CalendarEvent): any {
+  const isAllDay = event.is_all_day
+
+  const start = isAllDay
+    ? { date: event.start_time.slice(0, 10), timeZone: event.timezone }
+    : { dateTime: event.start_time, timeZone: event.timezone }
+
+  const end = isAllDay
+    ? { date: event.end_time.slice(0, 10), timeZone: event.timezone }
+    : { dateTime: event.end_time, timeZone: event.timezone }
+
+  const googleEvent: any = {
+    summary: event.title,
+    start,
+    end,
+    transparency: event.visibility === 'free' ? 'transparent' : 'opaque',
+    visibility: event.privacy === 'private' ? 'private' : 'default',
+  }
+
+  if (event.notes) {
+    googleEvent.description = event.notes
+  }
+
+  if (event.location) {
+    googleEvent.location = event.location
+  }
+
+  if (event.attendees.length > 0) {
+    googleEvent.attendees = event.attendees.map((a) => ({
+      email: a.email,
+      displayName: a.name,
+      responseStatus: a.response_status,
+    }))
+  }
+
+  if (event.reminders.length > 0) {
+    googleEvent.reminders = {
+      useDefault: false,
+      overrides: event.reminders.map((r) => ({
+        method: 'popup',
+        minutes: r.minutes_before,
+      })),
+    }
+  } else {
+    googleEvent.reminders = { useDefault: true }
+  }
+
+  if (event.recurrence_rule) {
+    // If the rule already has RRULE: prefix, use as-is; otherwise prefix it
+    const rule = event.recurrence_rule.startsWith('RRULE:')
+      ? event.recurrence_rule
+      : `RRULE:${event.recurrence_rule}`
+    googleEvent.recurrence = [rule]
+  }
+
+  if (event.color_override) {
+    googleEvent.colorId = event.color_override
+  }
+
+  return googleEvent
+}
+
+// ─── Sync Engine ─────────────────────────────────────────────────────────────
+
+/**
+ * Pull changes from Google Calendar using incremental sync.
+ * If no syncToken exists or Google returns 410 (expired token),
+ * falls back to a full sync window (30 days past + 365 days future).
+ */
+export async function pullChanges(
+  accountId: string
+): Promise<{ created: number; updated: number; deleted: number }> {
+  const supabase = getServiceClient()
+
+  // Fetch the account's sync_token and user_id
+  const { data: account, error: accountError } = await supabase
+    .from('google_accounts')
+    .select('sync_token, user_id')
+    .eq('id', accountId)
+    .single()
+
+  if (accountError || !account) {
+    throw new Error('Google account not found')
+  }
+
+  // Fetch all active calendars for this account
+  const { data: calendars, error: calError } = await supabase
+    .from('calendars')
+    .select('id, google_calendar_id')
+    .eq('google_account_id', accountId)
+    .eq('is_active', true)
+
+  if (calError || !calendars) {
+    throw new Error('Failed to fetch calendars')
+  }
+
+  let totalCreated = 0
+  let totalUpdated = 0
+  let totalDeleted = 0
+
+  for (const cal of calendars) {
+    const result = await syncCalendar(
+      accountId,
+      cal.id,
+      cal.google_calendar_id,
+      account.user_id,
+      account.sync_token
+    )
+    totalCreated += result.created
+    totalUpdated += result.updated
+    totalDeleted += result.deleted
+
+    // Store the latest sync token (from the last page of the last calendar)
+    if (result.newSyncToken) {
+      await supabase
+        .from('google_accounts')
+        .update({
+          sync_token: result.newSyncToken,
+          last_synced_at: new Date().toISOString(),
+        })
+        .eq('id', accountId)
+    }
+  }
+
+  return { created: totalCreated, updated: totalUpdated, deleted: totalDeleted }
+}
+
+/**
+ * Sync a single calendar, handling pagination and 410 fallback.
+ */
+async function syncCalendar(
+  accountId: string,
+  localCalendarId: string,
+  googleCalendarId: string,
+  userId: string,
+  syncToken: string | null
+): Promise<{
+  created: number
+  updated: number
+  deleted: number
+  newSyncToken: string | null
+}> {
+  const supabase = getServiceClient()
+  let created = 0
+  let updated = 0
+  let deleted = 0
+  let pageToken: string | undefined
+  let currentSyncToken = syncToken
+  let newSyncToken: string | null = null
+  let needsFullSync = !currentSyncToken
+
+  // Attempt incremental sync; fall back to full on 410
+  const fetchPage = async () => {
+    if (needsFullSync) {
+      const now = new Date()
+      const timeMin = new Date(
+        now.getTime() - 30 * 24 * 60 * 60 * 1000
+      ).toISOString()
+      const timeMax = new Date(
+        now.getTime() + 365 * 24 * 60 * 60 * 1000
+      ).toISOString()
+      return listGoogleEvents(accountId, googleCalendarId, {
+        timeMin,
+        timeMax,
+        pageToken,
+      })
+    }
+
+    try {
+      return await listGoogleEvents(accountId, googleCalendarId, {
+        syncToken: currentSyncToken!,
+        pageToken,
+      })
+    } catch (err: any) {
+      // 410 Gone — syncToken expired, fall back to full sync
+      if (err.message?.includes('410')) {
+        needsFullSync = true
+        currentSyncToken = null
+        const now = new Date()
+        const timeMin = new Date(
+          now.getTime() - 30 * 24 * 60 * 60 * 1000
+        ).toISOString()
+        const timeMax = new Date(
+          now.getTime() + 365 * 24 * 60 * 60 * 1000
+        ).toISOString()
+        return listGoogleEvents(accountId, googleCalendarId, {
+          timeMin,
+          timeMax,
+          pageToken,
+        })
+      }
+      throw err
+    }
+  }
+
+  do {
+    const page = await fetchPage()
+    const events: any[] = page.items ?? []
+
+    for (const googleEvent of events) {
+      // Skip cancelled events in full sync — they're just noise
+      if (
+        googleEvent.status === 'cancelled' &&
+        needsFullSync &&
+        !currentSyncToken
+      ) {
+        // In incremental sync, cancelled = delete signal
+        // In full sync, just skip them
+        continue
+      }
+
+      const result = await upsertEvent(
+        supabase,
+        googleEvent,
+        localCalendarId,
+        userId
+      )
+      if (result === 'created') created++
+      else if (result === 'updated') updated++
+      else if (result === 'deleted') deleted++
+    }
+
+    pageToken = page.nextPageToken
+    if (!page.nextPageToken && page.nextSyncToken) {
+      newSyncToken = page.nextSyncToken
+    }
+  } while (pageToken)
+
+  return { created, updated, deleted, newSyncToken }
+}
+
+/**
+ * Upsert a single Google event into the local database.
+ * Returns 'created', 'updated', or 'deleted'.
+ */
+async function upsertEvent(
+  supabase: ReturnType<typeof getServiceClient>,
+  googleEvent: any,
+  calendarId: string,
+  userId: string
+): Promise<'created' | 'updated' | 'deleted'> {
+  // Check if this event already exists locally
+  const { data: existing } = await supabase
+    .from('events')
+    .select('id, etag')
+    .eq('calendar_id', calendarId)
+    .eq('google_event_id', googleEvent.id)
+    .single()
+
+  // Cancelled event = delete locally
+  if (googleEvent.status === 'cancelled') {
+    if (existing) {
+      await supabase.from('events').delete().eq('id', existing.id)
+    }
+    return 'deleted'
+  }
+
+  const mapped = mapGoogleEventToLocal(googleEvent, calendarId, userId)
+
+  if (existing) {
+    // Skip update if etag hasn't changed
+    if (existing.etag && existing.etag === googleEvent.etag) {
+      return 'updated' // No actual change, but counted for reporting
+    }
+
+    await supabase
+      .from('events')
+      .update({
+        ...mapped,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+    return 'updated'
+  }
+
+  // Insert new event
+  await supabase.from('events').insert({
+    ...mapped,
+    id: crypto.randomUUID(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+  return 'created'
+}
+
+// ─── Push & Delete ───────────────────────────────────────────────────────────
+
+/**
+ * Push a local event to Google Calendar.
+ * Creates if no google_event_id, updates if one exists.
+ * Handles ETag 412 conflicts with last-write-wins merge.
+ */
+export async function pushEvent(
+  event: CalendarEvent,
+  calendar: Calendar
+): Promise<CalendarEvent> {
+  const supabase = getServiceClient()
+  const googlePayload = mapLocalEventToGoogle(event)
+
+  let googleResponse: any
+
+  if (event.google_event_id) {
+    // Update existing Google event
+    try {
+      googleResponse = await updateGoogleEventWithEtag(
+        calendar.google_account_id,
+        calendar.google_calendar_id,
+        event.google_event_id,
+        googlePayload,
+        event.etag
+      )
+    } catch (err: any) {
+      if (err.status === 412 || err.message?.includes('412')) {
+        // ETag conflict — fetch latest from Google, merge, re-push
+        googleResponse = await resolveConflict(
+          calendar.google_account_id,
+          calendar.google_calendar_id,
+          event.google_event_id,
+          event,
+          googlePayload
+        )
+      } else {
+        throw err
+      }
+    }
+  } else {
+    // Create new event on Google
+    googleResponse = await createGoogleEvent(
+      calendar.google_account_id,
+      calendar.google_calendar_id,
+      googlePayload,
+      Boolean(event.conferencing_url)
+    )
+  }
+
+  // Update local record with Google's response
+  const updatedFields: Partial<CalendarEvent> = {
+    google_event_id: googleResponse.id,
+    etag: googleResponse.etag,
+    sync_status: 'synced',
+    updated_at: new Date().toISOString(),
+  }
+
+  // If Google assigned a conferencing URL, capture it
+  if (googleResponse.conferenceData?.entryPoints) {
+    const videoEntry = googleResponse.conferenceData.entryPoints.find(
+      (ep: any) => ep.entryPointType === 'video'
+    )
+    if (videoEntry?.uri) {
+      updatedFields.conferencing_url = videoEntry.uri
+    }
+  } else if (googleResponse.hangoutLink) {
+    updatedFields.conferencing_url = googleResponse.hangoutLink
+  }
+
+  const { data: updated, error } = await supabase
+    .from('events')
+    .update(updatedFields)
+    .eq('id', event.id)
+    .select()
+    .single()
+
+  if (error || !updated) {
+    throw new Error(`Failed to update local event after push: ${error?.message}`)
+  }
+
+  return updated as CalendarEvent
+}
+
+/**
+ * Update a Google event with ETag-based optimistic concurrency.
+ * Throws with status 412 on conflict.
+ */
+async function updateGoogleEventWithEtag(
+  accountId: string,
+  calendarId: string,
+  googleEventId: string,
+  payload: any,
+  etag: string | null
+): Promise<any> {
+  const accessToken = await getGoogleAccessToken(accountId)
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  }
+
+  if (etag) {
+    headers['If-Match'] = etag
+  }
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(payload),
+    }
+  )
+
+  if (!response.ok) {
+    const body = await response.text()
+    const err = new Error(
+      `Google Calendar update failed: ${response.status} ${body}`
+    ) as any
+    err.status = response.status
+    throw err
+  }
+
+  return response.json()
+}
+
+/**
+ * Resolve an ETag conflict using last-write-wins per field.
+ * Fetches the latest version from Google, merges our changes on top,
+ * then pushes the merged result.
+ */
+async function resolveConflict(
+  accountId: string,
+  calendarId: string,
+  googleEventId: string,
+  localEvent: CalendarEvent,
+  localPayload: any
+): Promise<any> {
+  // Fetch the latest version from Google
+  const accessToken = await getGoogleAccessToken(accountId)
+  const latest = await googleCalendarRequest(
+    accessToken,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`
+  )
+
+  // Merge: our local payload takes precedence (last-write-wins)
+  const merged = { ...latest, ...localPayload }
+
+  // Remove read-only fields that can't be sent back
+  delete merged.kind
+  delete merged.etag
+  delete merged.id
+  delete merged.htmlLink
+  delete merged.created
+  delete merged.updated
+  delete merged.creator
+  delete merged.organizer
+  delete merged.iCalUID
+
+  // Push the merged result without If-Match (force write)
+  return updateGoogleEvent(accountId, calendarId, googleEventId, merged)
+}
+
+/**
+ * Delete an event from Google Calendar if it has a google_event_id.
+ */
+export async function deleteRemoteEvent(
+  event: CalendarEvent,
+  calendar: Calendar
+): Promise<void> {
+  if (!event.google_event_id) {
+    return // Nothing to delete on Google's side
+  }
+
+  await deleteGoogleEvent(
+    calendar.google_account_id,
+    calendar.google_calendar_id,
+    event.google_event_id
+  )
+}
+
+// ─── Webhook Handler ─────────────────────────────────────────────────────────
+
+/**
+ * Handle a Google Calendar push notification webhook.
+ * Finds the account + calendar that owns this channel, then pulls changes.
+ */
+export async function handleWebhook(
+  channelId: string,
+  resourceId: string
+): Promise<void> {
+  const supabase = getServiceClient()
+
+  // Find which google_account owns this webhook channel.
+  // The channelId was generated by watchGoogleCalendar and is a UUID
+  // that maps back to a specific account+calendar pair.
+  // We store these in a lightweight lookup: the calendars table itself,
+  // joined to its google_account.
+  //
+  // Since Google's push notification doesn't tell us which calendar changed
+  // (just the channel), we pull changes for the entire account to be safe.
+  // The incremental sync via syncToken keeps this efficient.
+
+  // First try to match via the google_account linked to any calendar under this account.
+  // Google webhooks fire per-calendar, but our sync is per-account, so we just
+  // need to find _any_ account whose calendars we're watching.
+  const { data: calendars } = await supabase
+    .from('calendars')
+    .select('google_account_id')
+    .eq('is_active', true)
+
+  if (!calendars || calendars.length === 0) {
+    return
+  }
+
+  // Deduplicate account IDs
+  const accountIds = [...new Set(calendars.map((c) => c.google_account_id))]
+
+  // Pull changes for each account — in practice the webhook belongs to one,
+  // but without a channel→account mapping table, we sync all active accounts.
+  // For a production system with many users, add a webhook_channels table.
+  for (const accountId of accountIds) {
+    try {
+      await pullChanges(accountId)
+    } catch (err) {
+      // Log but don't throw — one account failing shouldn't block others
+      console.error(
+        `Webhook sync failed for account ${accountId}:`,
+        err
+      )
+    }
+  }
+}
