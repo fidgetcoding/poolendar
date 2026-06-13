@@ -1,15 +1,15 @@
 'use client'
 
 import { useMemo, useCallback } from 'react'
-import { parseISO, format } from 'date-fns'
+import { parseISO, format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays } from 'date-fns'
 import { useCalendarStore } from '@/lib/stores/calendar-store'
 import { useUIStore } from '@/lib/stores/ui-store'
 import { CalendarHeader, CalendarGrid } from '@/components/calendar'
 import { KanbanBoard } from '@/components/kanban'
-import {
-  useCompleteRoutineInstance,
-  useResetRoutineInstance,
-} from '@/lib/hooks/use-routines'
+import { useEvents } from '@/lib/hooks/use-events'
+import { useTasks, useMoveTask, useCompleteTask, useCreateTask, useUpdateTask } from '@/lib/hooks/use-tasks'
+import { useRoutines, useCompleteRoutineInstance, useResetRoutineInstance } from '@/lib/hooks/use-routines'
+import { useTags } from '@/lib/hooks/use-tags'
 import type { CalendarItemData } from '@/components/calendar/calendar-types'
 import type { TaskStatus, TaskBoard, TaskImportance } from '@poolendar/types'
 
@@ -40,17 +40,27 @@ export default function AppPage() {
     [selectedDate]
   )
 
-  // Calendar view mode mapped for CalendarGrid (it only supports day/week/month)
   const gridView = view === '2weeks' || view === 'custom' ? 'week' : view
 
-  // Placeholder data arrays — these will come from TanStack Query hooks
-  // once the API layer is fully wired. The components accept typed arrays
-  // and render empty states when the arrays are empty.
-  const events: import('@poolendar/types').CalendarEvent[] = []
-  const tasks: import('@poolendar/types').Task[] = []
-  const routines: import('@poolendar/types').Routine[] = []
+  const { start: viewStart, end: viewEnd } = useMemo(() => {
+    const d = currentDate
+    if (view === 'day') return { start: format(d, 'yyyy-MM-dd'), end: format(d, 'yyyy-MM-dd') }
+    if (view === 'month') return { start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') }
+    const ws = startOfWeek(d, { weekStartsOn: 0 })
+    const days = view === '2weeks' ? 13 : view === 'custom' ? customDays - 1 : 6
+    return { start: format(ws, 'yyyy-MM-dd'), end: format(addDays(ws, days), 'yyyy-MM-dd') }
+  }, [currentDate, view, customDays])
+
+  const { data: events = [] } = useEvents(viewStart, viewEnd)
+  const { data: tasks = [] } = useTasks({})
+  const { data: routines = [] } = useRoutines()
+  const { data: tags = [] } = useTags()
   const calendars: import('@poolendar/types').Calendar[] = []
-  const tags: import('@poolendar/types').Tag[] = []
+
+  const moveTask = useMoveTask()
+  const completeTask = useCompleteTask()
+  const createTask = useCreateTask()
+  const updateTask = useUpdateTask()
 
   // Calendar item interactions
   const handleItemClick = useCallback(
@@ -76,37 +86,37 @@ export default function AppPage() {
 
   // Kanban interactions
   const handleTaskMove = useCallback(
-    (_taskId: string, _newStatus: TaskStatus, _newPosition: number) => {
-      // Will call useTasks().moveTask()
+    (taskId: string, newStatus: TaskStatus, newPosition: number) => {
+      moveTask.mutate({ id: taskId, status: newStatus, position: newPosition })
     },
-    []
+    [moveTask]
   )
 
   const handleTaskReorder = useCallback(
-    (_taskId: string, _status: TaskStatus, _newPosition: number) => {
-      // Will call useTasks().reorderTask()
+    (taskId: string, status: TaskStatus, newPosition: number) => {
+      moveTask.mutate({ id: taskId, status, position: newPosition })
     },
-    []
+    [moveTask]
   )
 
   const handleTaskUpdate = useCallback(
-    (_taskId: string, _updates: Partial<import('@poolendar/types').Task>) => {
-      // Will call useTasks().updateTask()
+    (taskId: string, updates: Partial<import('@poolendar/types').Task>) => {
+      updateTask.mutate({ id: taskId, data: updates })
     },
-    []
+    [updateTask]
   )
 
   const handleTaskCreate = useCallback(
-    (_data: {
+    (data: {
       title: string
       status: TaskStatus
       importance: TaskImportance
       due_date: string | null
       board: TaskBoard
     }) => {
-      // Will call useTasks().createTask()
+      createTask.mutate(data as Parameters<typeof createTask.mutate>[0])
     },
-    []
+    [createTask]
   )
 
   const handleTaskClick = useCallback(
@@ -117,10 +127,10 @@ export default function AppPage() {
   )
 
   const handleTaskComplete = useCallback(
-    (_taskId: string) => {
-      // Will call useTasks().completeTask()
+    (taskId: string) => {
+      completeTask.mutate(taskId)
     },
-    []
+    [completeTask]
   )
 
   // Routine instance completion toggle

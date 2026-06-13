@@ -43,18 +43,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // RSVP response maps to the user's attendance, not the event status column.
-  // event.status expects 'confirmed' | 'tentative' | 'cancelled' — writing
-  // 'accepted' / 'declined' there corrupts the data. Instead, update the
-  // user's entry in the attendees array (or just acknowledge the response).
+  const { data: { user } } = await supabase.auth.getUser()
+  const userEmail = user?.email?.toLowerCase()
+
   const attendees: Array<{ email?: string; response?: string }> =
     Array.isArray(event.attendees) ? event.attendees : []
 
-  // Update attendees with the user's response
+  let matched = false
   const updatedAttendees = attendees.map((a) => {
-    // Match by checking if this is the current user's entry (simple heuristic)
+    if (a.email?.toLowerCase() === userEmail) {
+      matched = true
+      return { ...a, response: parsed.data.response }
+    }
     return a
   })
+
+  if (!matched && userEmail) {
+    updatedAttendees.push({ email: userEmail, response: parsed.data.response })
+  }
 
   const { data: updatedEvent, error: updateError } = await supabase
     .from('events')

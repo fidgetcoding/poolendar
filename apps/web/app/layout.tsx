@@ -14,8 +14,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#6366f1" />
+      </head>
       <body>
         <Providers>{children}</Providers>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}`,
+          }}
+        />
       </body>
     </html>
   )

@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError } from '../../../../lib/auth/helpers'
+import { z } from 'zod'
+
+const patchSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  ai_classification: z.boolean().optional(),
+  scoring_weights: z.object({
+    urgency: z.number().min(0).max(1),
+    deadline: z.number().min(0).max(1),
+    tag_priority: z.number().min(0).max(1),
+    staleness: z.number().min(0).max(1),
+  }).optional(),
+  paused_until: z.string().datetime().nullable().optional(),
+}).strict()
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request)
@@ -32,15 +45,25 @@ export async function PATCH(request: NextRequest) {
   if (isAuthError(auth)) return auth
   const { userId, supabase } = auth
 
-  let body: Record<string, unknown>
+  let rawBody: unknown
   try {
-    body = await request.json()
+    rawBody = await request.json()
   } catch {
     return NextResponse.json(
       { error: 'Invalid JSON body' },
       { status: 400 }
     )
   }
+
+  const parsed = patchSettingsSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Validation error', details: parsed.error.flatten().fieldErrors },
+      { status: 400 }
+    )
+  }
+
+  const body = parsed.data
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -50,17 +73,17 @@ export async function PATCH(request: NextRequest) {
 
   const settings = { ...((profile?.settings as Record<string, any>) ?? {}) }
 
-  // Map incoming fields to the profile settings keys
-  if ('enabled' in body) {
+  // Map validated fields to the profile settings keys
+  if (body.enabled !== undefined) {
     settings.auto_schedule_ai_enabled = body.enabled
   }
-  if ('ai_classification' in body) {
+  if (body.ai_classification !== undefined) {
     settings.auto_schedule_ai_classification = body.ai_classification
   }
-  if ('scoring_weights' in body) {
+  if (body.scoring_weights !== undefined) {
     settings.auto_schedule_weights = body.scoring_weights
   }
-  if ('paused_until' in body) {
+  if (body.paused_until !== undefined) {
     settings.auto_schedule_paused_until = body.paused_until
   }
 

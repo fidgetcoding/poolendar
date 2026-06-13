@@ -1,8 +1,11 @@
 'use client'
 
-import { Send } from 'lucide-react'
+import { useState } from 'react'
+import { Send, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 import { SettingsSection } from './SettingsSection'
+import { toast } from 'sonner'
 import type { UserSettings } from '@poolendar/types'
 
 interface TelegramTabProps {
@@ -11,6 +14,31 @@ interface TelegramTabProps {
 }
 
 export function TelegramTab({ settings, onChange }: TelegramTabProps) {
+  const [sending, setSending] = useState(false)
+
+  const hasConfig = !!(settings.telegram_bot_token && settings.telegram_chat_id)
+
+  async function sendTestMessage() {
+    setSending(true)
+    try {
+      const res = await fetch('/api/notifications/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: 'telegram' }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        toast.error(body.error || 'Failed to send test message')
+        return
+      }
+      toast.success('Test message sent to Telegram')
+    } catch {
+      toast.error('Failed to send test message')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <>
       <SettingsSection
@@ -58,6 +86,24 @@ export function TelegramTab({ settings, onChange }: TelegramTabProps) {
             onChange({ telegram_chat_id: e.target.value || null })
           }
         />
+
+        <div className="pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={sendTestMessage}
+            disabled={sending || !hasConfig}
+          >
+            {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <Send className="h-3.5 w-3.5" />
+            Send test message
+          </Button>
+          {!hasConfig && (
+            <p className="mt-1.5 text-xs text-[var(--muted)]">
+              Enter both bot token and chat ID above to send a test message.
+            </p>
+          )}
+        </div>
       </SettingsSection>
     </>
   )

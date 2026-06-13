@@ -7,7 +7,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "vitest"
+  },
   "dependencies": {
     "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0"
   }
 }

@@ -1,8 +1,12 @@
 'use client'
 
-import { Bell, Mail, Smartphone, MessageCircle } from 'lucide-react'
+import { useState } from 'react'
+import { Bell, Mail, Smartphone, MessageCircle, Loader2, CheckCircle2 } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 import { SettingsSection, SettingsToggle } from './SettingsSection'
+import { usePushSubscription } from '@/lib/notifications/use-push-subscription'
+import { toast } from 'sonner'
 import type { UserSettings, NotificationSettings } from '@poolendar/types'
 
 interface NotificationsTabProps {
@@ -59,6 +63,30 @@ export function NotificationsTab({
   onChange,
   onNotificationChange,
 }: NotificationsTabProps) {
+  const push = usePushSubscription()
+  const [testingChannel, setTestingChannel] = useState<string | null>(null)
+
+  async function sendTestNotification(channel: string) {
+    setTestingChannel(channel)
+    try {
+      const res = await fetch('/api/notifications/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        toast.error(body.error || `Failed to send test ${channel} notification`)
+        return
+      }
+      toast.success(`Test ${channel} notification sent`)
+    } catch {
+      toast.error(`Failed to send test ${channel} notification`)
+    } finally {
+      setTestingChannel(null)
+    }
+  }
+
   return (
     <>
       <SettingsSection
@@ -67,6 +95,8 @@ export function NotificationsTab({
       >
         {CHANNELS.map((channel) => {
           const config = settings.notifications[channel.id]
+          const isPush = channel.id === 'browser_push'
+
           return (
             <div
               key={channel.id}
@@ -93,6 +123,51 @@ export function NotificationsTab({
                 />
               </div>
 
+              {/* Push subscription setup */}
+              {isPush && config.enabled && (
+                <div className="mb-3 ml-6 border-l border-[var(--border)] pl-4">
+                  {!push.isSupported ? (
+                    <p className="text-xs text-[var(--muted)]">
+                      Push notifications are not supported in this browser.
+                    </p>
+                  ) : push.permissionState === 'denied' ? (
+                    <p className="text-xs text-[var(--destructive)]">
+                      Notifications are blocked. Enable them in your browser
+                      settings for this site.
+                    </p>
+                  ) : push.isSubscribed ? (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      <span className="text-xs text-green-500">
+                        Push notifications enabled
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-7 text-xs"
+                        onClick={push.unsubscribe}
+                        disabled={push.isLoading}
+                      >
+                        Disable
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={push.subscribe}
+                      disabled={push.isLoading}
+                    >
+                      {push.isLoading && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      Enable push notifications
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {config.enabled && (
                 <div className="ml-6 space-y-2 border-l border-[var(--border)] pl-4">
                   {EVENT_TYPES.map((type) => (
@@ -114,6 +189,22 @@ export function NotificationsTab({
                       />
                     </div>
                   ))}
+
+                  {/* Test notification button */}
+                  <div className="pt-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-[var(--muted)]"
+                      onClick={() => sendTestNotification(channel.id)}
+                      disabled={testingChannel === channel.id}
+                    >
+                      {testingChannel === channel.id && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      Send test notification
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

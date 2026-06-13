@@ -17,9 +17,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const MAX_FRAMES = 200
   if (!Array.isArray(body.order) || body.order.length === 0) {
     return NextResponse.json(
       { error: 'order must be a non-empty array of frame IDs' },
+      { status: 400 }
+    )
+  }
+  if (body.order.length > MAX_FRAMES) {
+    return NextResponse.json(
+      { error: `order array must not exceed ${MAX_FRAMES} items` },
       { status: 400 }
     )
   }

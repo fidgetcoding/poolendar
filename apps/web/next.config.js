@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   transpilePackages: ['@poolendar/types', '@poolendar/validators', '@poolendar/api-client'],
   images: {
     remotePatterns: [

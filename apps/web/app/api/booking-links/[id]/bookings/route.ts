@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('*')
+    .select('id, booking_link_id, booker_name, booker_email, booker_notes, start_time, end_time, status, google_event_id, created_at, updated_at')
     .eq('booking_link_id', id)
     .order('start_time', { ascending: false })
 

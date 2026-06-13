@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   const { userId, supabase } = auth
 
-  const { data: profile, error } = await supabase
+  let { data: profile, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -26,6 +26,19 @@ export async function GET(request: NextRequest) {
 
   if (error || !profile) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+  }
+
+  // Strip sensitive credentials from the settings object before returning.
+  // Telegram bot tokens are stored in settings but must never be exposed
+  // to the client -- the client only needs to know whether they are configured.
+  if (profile.settings && typeof profile.settings === 'object') {
+    const safeSettings = { ...(profile.settings as Record<string, unknown>) }
+    const hasTelegramToken = Boolean(safeSettings.telegram_bot_token)
+    const hasTelegramChat = Boolean(safeSettings.telegram_chat_id)
+    delete safeSettings.telegram_bot_token
+    delete safeSettings.telegram_chat_id
+    safeSettings.telegram_configured = hasTelegramToken && hasTelegramChat
+    profile = { ...profile, settings: safeSettings }
   }
 
   return NextResponse.json(profile)

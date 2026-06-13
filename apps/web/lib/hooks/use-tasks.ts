@@ -397,6 +397,72 @@ export function useDeleteTask() {
 }
 
 // ---------------------------------------------------------------------------
+// useCompleteTask — toggle a task to completed status
+// ---------------------------------------------------------------------------
+
+export function useCompleteTask() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<Task> => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          status: 'completed' as TaskStatus,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*, task_tags(tag_id, tags(*))')
+        .single()
+
+      if (error) throw error
+
+      const { task_tags, ...rest } = data as Record<string, unknown> & {
+        task_tags?: { tag_id: string; tags: Tag }[]
+      }
+      return {
+        ...rest,
+        tags: task_tags?.map((tt) => tt.tags).filter(Boolean) ?? [],
+      } as Task
+    },
+
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: taskKeys.lists() })
+
+      const previous = queryClient.getQueriesData<Task[]>({
+        queryKey: taskKeys.lists(),
+      })
+
+      queryClient.setQueriesData<Task[]>(
+        { queryKey: taskKeys.lists() },
+        (old) =>
+          old
+            ? old.map((t) =>
+                t.id === id
+                  ? { ...t, status: 'completed' as TaskStatus, completed_at: new Date().toISOString() }
+                  : t,
+              )
+            : old,
+      )
+
+      return { previous }
+    },
+
+    onError: (_err, _id, context) => {
+      if (!context?.previous) return
+      for (const [key, data] of context.previous) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
 // useMoveTask — status / board / position changes with auto-field logic
 // ---------------------------------------------------------------------------
 

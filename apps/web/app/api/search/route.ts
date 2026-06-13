@@ -12,6 +12,9 @@ export async function GET(request: NextRequest) {
   if (!q || q.length === 0) {
     return NextResponse.json({ error: 'Missing required query parameter: q' }, { status: 400 })
   }
+  if (q.length > 200) {
+    return NextResponse.json({ error: 'Query parameter q must not exceed 200 characters' }, { status: 400 })
+  }
 
   const typesParam = searchParams.get('types')
   const types = typesParam ? typesParam.split(',') : ['event', 'task', 'routine', 'booking_link']

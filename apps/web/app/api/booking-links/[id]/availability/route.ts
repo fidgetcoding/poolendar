@@ -142,6 +142,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Cap the date range to prevent DoS via huge availability calculations
+  const startMs = new Date(startDate).getTime()
+  const endMs = new Date(endDate).getTime()
+  const MAX_RANGE_DAYS = 90
+  if (isNaN(startMs) || isNaN(endMs) || endMs < startMs || (endMs - startMs) > MAX_RANGE_DAYS * 86_400_000) {
+    return NextResponse.json(
+      { error: `Date range must not exceed ${MAX_RANGE_DAYS} days` },
+      { status: 400 }
+    )
+  }
+
   // Look up booking link
   const { data: link, error: linkError } = await supabase
     .from('booking_links')
