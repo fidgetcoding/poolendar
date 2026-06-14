@@ -27,7 +27,7 @@ self.addEventListener('notificationclick', (event) => {
 })
 
 // Basic offline caching (app shell)
-const CACHE_NAME = 'poolendar-v1'
+const CACHE_NAME = 'poolendar-v2'
 const PRECACHE = ['/', '/manifest.json']
 
 self.addEventListener('install', (event) => {
