@@ -26,10 +26,9 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
-      // Ensure profile exists for the authenticated user
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -56,6 +55,22 @@ export async function GET(request: NextRequest) {
             display_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
             avatar_url: user.user_metadata?.avatar_url || null,
           })
+        }
+
+        const providerToken = sessionData?.session?.provider_token
+        const providerRefreshToken = sessionData?.session?.provider_refresh_token
+        if (providerToken && user.app_metadata?.provider === 'google') {
+          const tokenExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString()
+          await supabase.from('google_accounts').upsert(
+            {
+              user_id: user.id,
+              email: user.email!,
+              access_token: providerToken,
+              refresh_token: providerRefreshToken || '',
+              token_expires_at: tokenExpiresAt,
+            },
+            { onConflict: 'user_id,email' }
+          )
         }
       }
 
