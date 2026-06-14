@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 import { authenticate, isAuthError } from '../../../../lib/auth/helpers'
 
 async function hmacSign(data: string): Promise<string> {
@@ -70,6 +69,7 @@ export async function GET(request: NextRequest) {
   }
 
   const userId = stateUserId
+  const { supabase } = auth
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/google/callback`
 
   // Exchange code for tokens
@@ -86,8 +86,9 @@ export async function GET(request: NextRequest) {
   })
 
   if (!tokenResponse.ok) {
+    console.error('[google/callback] token exchange failed:', tokenResponse.status, await tokenResponse.text().catch(() => ''))
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=token_exchange_failed`
+      `${process.env.NEXT_PUBLIC_APP_URL}/?error=token_exchange_failed`
     )
   }
 
@@ -101,25 +102,14 @@ export async function GET(request: NextRequest) {
 
   if (!userinfoResponse.ok) {
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=userinfo_failed`
+      `${process.env.NEXT_PUBLIC_APP_URL}/?error=userinfo_failed`
     )
   }
 
   const userinfo = await userinfoResponse.json()
   const email = userinfo.email
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      cookies: {
-        getAll() { return [] },
-        setAll() {},
-      },
-    }
-  )
-
-  // Upsert Google account
+  // Upsert Google account — uses authenticated user's session (RLS: auth.uid() = user_id)
   const { data: googleAccount, error: upsertError } = await supabase
     .from('google_accounts')
     .upsert(
@@ -136,8 +126,9 @@ export async function GET(request: NextRequest) {
     .single()
 
   if (upsertError || !googleAccount) {
+    console.error('[google/callback] google_accounts upsert failed:', upsertError?.message)
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/settings?error=account_save_failed`
+      `${process.env.NEXT_PUBLIC_APP_URL}/?error=account_save_failed`
     )
   }
 
@@ -170,7 +161,7 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(
-    `${process.env.NEXT_PUBLIC_APP_URL}/settings?google_connected=true`
+    `${process.env.NEXT_PUBLIC_APP_URL}/?google_connected=true`
   )
 
   // Delete the oauth_state cookie

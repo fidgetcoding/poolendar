@@ -59,9 +59,12 @@ export async function GET(request: NextRequest) {
 
         const providerToken = sessionData?.session?.provider_token
         const providerRefreshToken = sessionData?.session?.provider_refresh_token
+
+        let googleAccountLinked = false
+
         if (providerToken && user.app_metadata?.provider === 'google') {
           const tokenExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString()
-          const { data: googleAccount } = await supabase.from('google_accounts').upsert(
+          const { data: googleAccount, error: gaError } = await supabase.from('google_accounts').upsert(
             {
               user_id: user.id,
               email: user.email!,
@@ -72,7 +75,12 @@ export async function GET(request: NextRequest) {
             { onConflict: 'user_id,email' }
           ).select().single()
 
+          if (gaError) {
+            console.error('[callback] google_accounts upsert failed:', gaError.message)
+          }
+
           if (googleAccount) {
+            googleAccountLinked = true
             try {
               const calRes = await fetch(
                 'https://www.googleapis.com/calendar/v3/users/me/calendarList',
@@ -95,10 +103,26 @@ export async function GET(request: NextRequest) {
                     { onConflict: 'google_account_id,google_calendar_id' }
                   )
                 }
+              } else {
+                console.error('[callback] Google Calendar API error:', calRes.status, await calRes.text().catch(() => ''))
               }
-            } catch {
-              // Calendar list fetch failed — non-fatal, user can sync later
+            } catch (err) {
+              console.error('[callback] Calendar list fetch error:', err)
             }
+          }
+        } else {
+          console.log('[callback] No provider_token from Supabase session — will redirect to Google Connect')
+        }
+
+        if (!googleAccountLinked) {
+          const { count } = await supabase
+            .from('google_accounts')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+
+          if (!count || count === 0) {
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://poolendar.com'
+            return NextResponse.redirect(`${appUrl}/api/google/connect`)
           }
         }
       }
