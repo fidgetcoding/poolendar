@@ -115,7 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Use TanStack Query for profile — provides accent color propagation
   const { data: profileData } = useProfile()
 
-  const [calendars] = useState<Calendar[]>([])
+  const [calendars, setCalendars] = useState<Calendar[]>([])
 
   useEffect(() => {
     async function loadProfile() {
@@ -136,6 +136,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       if (data) {
         setProfile(data as Profile)
+      }
+
+      const { data: cals } = await supabase
+        .from('calendars')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('is_primary', { ascending: false })
+
+      if (cals) {
+        setCalendars(cals as Calendar[])
+        calendarStore.setAllCalendarsVisible(cals.map((c: Calendar) => c.id))
       }
     }
 

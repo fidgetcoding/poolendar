@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         const providerRefreshToken = sessionData?.session?.provider_refresh_token
         if (providerToken && user.app_metadata?.provider === 'google') {
           const tokenExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString()
-          await supabase.from('google_accounts').upsert(
+          const { data: googleAccount } = await supabase.from('google_accounts').upsert(
             {
               user_id: user.id,
               email: user.email!,
@@ -70,7 +70,36 @@ export async function GET(request: NextRequest) {
               token_expires_at: tokenExpiresAt,
             },
             { onConflict: 'user_id,email' }
-          )
+          ).select().single()
+
+          if (googleAccount) {
+            try {
+              const calRes = await fetch(
+                'https://www.googleapis.com/calendar/v3/users/me/calendarList',
+                { headers: { Authorization: `Bearer ${providerToken}` } }
+              )
+              if (calRes.ok) {
+                const calList = await calRes.json()
+                for (const cal of calList.items ?? []) {
+                  await supabase.from('calendars').upsert(
+                    {
+                      user_id: user.id,
+                      google_account_id: googleAccount.id,
+                      google_calendar_id: cal.id,
+                      name: cal.summary || cal.id,
+                      color: cal.backgroundColor || '#4285f4',
+                      is_primary: cal.primary || false,
+                      is_active: true,
+                      access_role: cal.accessRole || null,
+                    },
+                    { onConflict: 'google_account_id,google_calendar_id' }
+                  )
+                }
+              }
+            } catch {
+              // Calendar list fetch failed — non-fatal, user can sync later
+            }
+          }
         }
       }
 
