@@ -28,3 +28,79 @@ body {
 * {
   box-sizing: border-box;
 }
+
+@keyframes float {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.06;
+  }
+  92% {
+    opacity: 0.06;
+  }
+  100% {
+    transform: translateY(-110vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 40px 10px rgba(249, 168, 37, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 60px 20px rgba(249, 168, 37, 0.18);
+  }
+}
+
+@keyframes shine-sweep {
+  0%, 100% {
+    transform: translateX(-150%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+}
+
+.animate-float {
+  animation: float linear infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 4s ease-in-out infinite;
+}
+
+.poop-logo::after {
+  content: '';
+  position: absolute;
+  inset: 5%;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.1) 42%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.1) 58%,
+    transparent 70%
+  );
+  animation: shine-sweep 5s ease-in-out infinite;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+}

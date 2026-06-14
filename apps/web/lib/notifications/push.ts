@@ -2,12 +2,21 @@ import webpush from 'web-push'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NotificationPayload, PushSubscriptionRecord } from './types'
 
-if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+let vapidConfigured = false
+
+function ensureVapid() {
+  if (vapidConfigured) return
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (!pub || !priv || priv === 'placeholder') {
+    throw new Error('VAPID keys not configured')
+  }
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:support@poolendar.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
+    pub,
+    priv
   )
+  vapidConfigured = true
 }
 
 export async function sendPushNotification(
@@ -21,6 +30,7 @@ export async function sendPushNotification(
   }
 
   try {
+    ensureVapid()
     await webpush.sendNotification(
       pushSubscription,
       JSON.stringify({
