@@ -22,11 +22,5 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
-  ],
-  "crons": [
-    { "path": "/api/cron/reminders", "schedule": "* * * * *" },
-    { "path": "/api/cron/webhook-renewal", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/sync-poll", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/auto-schedule", "schedule": "0 */6 * * *" }
   ]
 }

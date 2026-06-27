@@ -5,7 +5,6 @@ import {
   X,
   ChevronLeft,
   Keyboard,
-  CalendarDays,
   Video,
   Send,
   Settings,
@@ -19,7 +18,6 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { GeneralTab } from './GeneralTab'
-import { CalendarsTab } from './CalendarsTab'
 import { NotificationsTab } from './NotificationsTab'
 import { AccountTab } from './AccountTab'
 import { ApiKeyManager } from './ApiKeyManager'
@@ -37,13 +35,10 @@ import type {
   UserSettings,
   NotificationSettings,
   ApiKey,
-  GoogleAccount,
-  Calendar as CalendarType,
 } from '@poolendar/types'
 
 type SettingsTab =
   | 'shortcuts'
-  | 'calendars'
   | 'video'
   | 'telegram'
   | 'general'
@@ -123,7 +118,6 @@ const SETTINGS_SECTIONS: NavSection[] = [
   {
     label: 'Integrations',
     items: [
-      { key: 'calendars', label: 'Calendars', icon: CalendarDays },
       { key: 'video', label: 'Video Conferencing', icon: Video },
       { key: 'telegram', label: 'Telegram', icon: Send },
     ],
@@ -166,8 +160,6 @@ export function SettingsModal({
   const supabase = createClient()
   const [activeTab, setActiveTab] = useState<SettingsTab>('shortcuts')
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
-  const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([])
-  const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [saving, setSaving] = useState(false)
 
@@ -185,26 +177,8 @@ export function SettingsModal({
     setUsername(profile.username || '')
     setCompany(profile.company || '')
 
-    loadGoogleAccounts()
-    loadCalendars()
     loadApiKeys()
   }, [open, profile])
-
-  async function loadGoogleAccounts() {
-    const { data } = await supabase
-      .from('google_accounts')
-      .select('id, user_id, email, token_expires_at, sync_token, last_synced_at, created_at')
-      .order('created_at', { ascending: true })
-    if (data) setGoogleAccounts(data)
-  }
-
-  async function loadCalendars() {
-    const { data } = await supabase
-      .from('calendars')
-      .select('*')
-      .order('name', { ascending: true })
-    if (data) setCalendars(data)
-  }
 
   async function loadApiKeys() {
     const { data } = await supabase
@@ -269,58 +243,6 @@ export function SettingsModal({
       setSaving(false)
     }
   }, [profile, settings, displayName, username, company, supabase, onProfileUpdate])
-
-  async function handleConnectGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/callback`,
-        scopes:
-          'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-      },
-    })
-    if (error) {
-      toast.error('Failed to connect Google account')
-    }
-  }
-
-  async function handleDisconnectAccount(accountId: string) {
-    try {
-      const res = await fetch(`/api/google/disconnect/${accountId}`, {
-        method: 'DELETE',
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        toast.error(data.error || 'Failed to disconnect account')
-        return
-      }
-
-      setGoogleAccounts((a) => a.filter((acc) => acc.id !== accountId))
-      setCalendars((c) => c.filter((cal) => cal.google_account_id !== accountId))
-      toast.success('Account disconnected')
-    } catch {
-      toast.error('Failed to disconnect account')
-    }
-  }
-
-  async function toggleCalendar(calendarId: string, isActive: boolean) {
-    const { error } = await supabase
-      .from('calendars')
-      .update({ is_active: isActive })
-      .eq('id', calendarId)
-
-    if (error) {
-      toast.error('Failed to update calendar')
-      return
-    }
-
-    setCalendars((c) =>
-      c.map((cal) =>
-        cal.id === calendarId ? { ...cal, is_active: isActive } : cal
-      )
-    )
-  }
 
   async function handleDeleteAccount() {
     if (!profile) return
@@ -492,15 +414,6 @@ export function SettingsModal({
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="space-y-8">
               {activeTab === 'shortcuts' && <ShortcutsTab />}
-              {activeTab === 'calendars' && (
-                <CalendarsTab
-                  googleAccounts={googleAccounts}
-                  calendars={calendars}
-                  onConnect={handleConnectGoogle}
-                  onDisconnect={handleDisconnectAccount}
-                  onToggleCalendar={toggleCalendar}
-                />
-              )}
               {activeTab === 'video' && <VideoConferencingTab />}
               {activeTab === 'telegram' && (
                 <TelegramTab settings={settings} onChange={updateSettings} />
