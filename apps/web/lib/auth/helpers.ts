@@ -73,6 +73,11 @@ export function isAuthError(result: AuthResult | NextResponse): result is NextRe
   return result instanceof NextResponse
 }
 
+/**
+ * Zod validation failure response. Spec #77: schema validation errors return
+ * 422 (Unprocessable Entity), distinct from a genuinely malformed request body
+ * (unparseable JSON), which the routes still return as 400.
+ */
 export function validationError(issues: { path: (string | number)[]; message: string }[]) {
   const details: Record<string, string[]> = {}
   for (const issue of issues) {
@@ -82,6 +87,6 @@ export function validationError(issues: { path: (string | number)[]; message: st
   }
   return NextResponse.json(
     { error: 'Validation error', details },
-    { status: 400 }
+    { status: 422 }
   )
 }

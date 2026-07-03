@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError } from '../../../lib/auth/helpers'
+import { paginate } from '../../../lib/pagination'
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request)
@@ -208,5 +209,8 @@ export async function GET(request: NextRequest) {
     return dateB - dateA
   })
 
-  return NextResponse.json(results.slice(0, limit))
+  // Cursor-paginate the merged, deduped results. The per-table `.limit(limit)`
+  // above bounds the DB reads; this bounds the returned page. Results can share
+  // an id across entity types, so the cursor key is `type:id`.
+  return NextResponse.json(paginate(results, searchParams, (r) => `${r.type}:${r.id}`))
 }

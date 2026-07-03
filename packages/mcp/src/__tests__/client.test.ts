@@ -365,7 +365,8 @@ describe('PoolendarClient', () => {
       const [url, opts] = lastFetchCall()
       expect(url).toBe(`${BASE_URL}/api/tasks/t-1/subtasks/reorder`)
       expect(opts.method).toBe('POST')
-      expect(JSON.parse(opts.body)).toEqual({ order: ['sub-2', 'sub-1'] })
+      // The reorder route expects `subtask_ids`, not `order`.
+      expect(JSON.parse(opts.body)).toEqual({ subtask_ids: ['sub-2', 'sub-1'] })
     })
 
     // Routines

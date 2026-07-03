@@ -228,7 +228,7 @@ export function getTaskToolDefinitions(): ToolDefinition[] {
     {
       name: 'move_task',
       description:
-        'Move a task on the kanban board by changing its status column and/or position within that column. Moving to "in_progress" auto-sets the start date. Moving to "done" auto-sets the completion date.',
+        'Move a task on the kanban board by changing its status column, board, and/or position. All three are optional — pass only what changes (e.g., board alone, or position alone). Moving to "done" auto-sets the completion date; moving away from "done" clears it.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -236,15 +236,20 @@ export function getTaskToolDefinitions(): ToolDefinition[] {
           status: {
             type: 'string',
             enum: ['backlog', 'in_progress', 'check', 'done'],
-            description: 'The target kanban column.',
+            description: 'The target kanban column. Optional.',
+          },
+          board: {
+            type: 'string',
+            enum: ['current', 'future'],
+            description: 'The target board ("current" or "future"). Optional.',
           },
           position: {
             type: 'number',
             description:
-              'Fractional position within the column for ordering (e.g., 1.5 to place between items at 1.0 and 2.0).',
+              'Fractional position within the column for ordering (e.g., 1.5 to place between items at 1.0 and 2.0). Optional.',
           },
         },
-        required: ['id', 'status', 'position'],
+        required: ['id'],
       },
     },
     {
@@ -310,6 +315,26 @@ export function getTaskToolDefinitions(): ToolDefinition[] {
         required: ['id'],
       },
     },
+    {
+      name: 'reflow_day',
+      description:
+        "Reschedule all of a day's flexible scheduled tasks so they no longer overlap. Tasks keep their original order (by scheduled start) and their durations, and are packed back-to-back starting from the day's first flexible task. Events are never moved; non-flexible tasks are left in place. Returns the day's tasks with their new times.",
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          date: {
+            type: 'string',
+            description: 'The day to reflow, in ISO 8601 date format (e.g., "2026-06-15").',
+          },
+          timezone: {
+            type: 'string',
+            description:
+              'IANA timezone used to decide which tasks fall on that day (e.g., "America/New_York"). Defaults to the app timezone.',
+          },
+        },
+        required: ['date'],
+      },
+    },
   ]
 }
 
@@ -354,19 +379,20 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
     },
 
     move_task: async (args) => {
-      const task = await client.moveTask(args.id as string, {
-        status: args.status as string,
-        position: args.position as number,
-      })
+      const data: { status?: string; board?: string; position?: number } = {}
+      if (args.status !== undefined) data.status = args.status as string
+      if (args.board !== undefined) data.board = args.board as string
+      if (args.position !== undefined) data.position = args.position as number
+      const task = await client.moveTask(args.id as string, data)
       return JSON.stringify(task, null, 2)
     },
 
     split_task: async (args) => {
-      const children = await client.splitTask(
+      const result = await client.splitTask(
         args.id as string,
-        args.chunks ? { chunks: args.chunks as Array<{ title: string; time_estimate?: string }> } : undefined
+        args.chunks !== undefined ? { chunks: args.chunks as number } : undefined
       )
-      return JSON.stringify(children, null, 2)
+      return JSON.stringify(result, null, 2)
     },
 
     schedule_task: async (args) => {
@@ -384,6 +410,14 @@ export function getTaskToolHandlers(client: PoolendarClient): Record<string, Too
 
     reopen_task: async (args) => {
       const result = await client.reopenTask(args.id as string)
+      return JSON.stringify(result, null, 2)
+    },
+
+    reflow_day: async (args) => {
+      const result = await client.reflowDay({
+        date: args.date as string,
+        timezone: args.timezone as string | undefined,
+      })
       return JSON.stringify(result, null, 2)
     },
   }

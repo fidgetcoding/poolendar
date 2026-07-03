@@ -11,7 +11,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -136,13 +136,13 @@ describe('PATCH /api/calendars/[id]', () => {
   it('returns 400 on an empty patch body', async () => {
     mockAuthWithTables({})
     const res = await PATCH(patchReq({}), { params })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 400 on an invalid colour', async () => {
     mockAuthWithTables({})
     const res = await PATCH(patchReq({ color: 'red' }), { params })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 404 when the calendar is not owned by the caller', async () => {

@@ -18,7 +18,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -209,7 +209,7 @@ describe('POST /api/tasks/:id/subtasks', () => {
     const req = createRequest('POST', `/api/tasks/${TEST_TASK_ID}/subtasks`, { title: '' })
     const res = await POST(req, routeParams(TEST_TASK_ID))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects invalid JSON with 400', async () => {

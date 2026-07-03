@@ -14,7 +14,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -166,6 +166,6 @@ describe('POST /api/events/:id/rsvp', () => {
     const req = createRequest(`/api/events/${TEST_EVENT_ID}/rsvp`, { response: 'maybe' })
     const res = await POST(req, routeParams(TEST_EVENT_ID))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 })

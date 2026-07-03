@@ -68,7 +68,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key].push(issue.message)
     }
-    return Response.json({ error: 'Validation error', details }, { status: 400 })
+    return Response.json({ error: 'Validation error', details }, { status: 422 })
   },
 }))
 
@@ -184,7 +184,7 @@ describe('POST /api/convert', () => {
       target_type: 'event',
     }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 400 for invalid source_type', async () => {
@@ -198,7 +198,7 @@ describe('POST /api/convert', () => {
       target_type: 'task',
     }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   // -----------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError, validationError } from '../../../lib/auth/helpers'
 import { createBookingLinkSchema } from '@poolendar/validators'
+import { paginate } from '../../../lib/pagination'
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request)
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json(paginate(data ?? [], request.nextUrl.searchParams))
 }
 
 export async function POST(request: NextRequest) {

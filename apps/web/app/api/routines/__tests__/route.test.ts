@@ -18,7 +18,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -92,8 +92,9 @@ describe('GET /api/routines', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(2)
-    expect(body[0].title).toBe('Morning workout')
+    expect(body.items).toHaveLength(2)
+    expect(body.items[0].title).toBe('Morning workout')
+    expect(body.next_cursor).toBeNull()
   })
 
   it('returns empty array when no routines exist', async () => {
@@ -104,7 +105,7 @@ describe('GET /api/routines', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual([])
+    expect(body.items).toEqual([])
   })
 
   it('returns 500 when supabase query fails', async () => {
@@ -153,7 +154,7 @@ describe('POST /api/routines', () => {
     const req = createRequest('POST', '/api/routines', noRule)
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects missing title with 400', async () => {
@@ -163,7 +164,7 @@ describe('POST /api/routines', () => {
     const req = createRequest('POST', '/api/routines', noTitle)
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects invalid time format with 400', async () => {
@@ -176,7 +177,7 @@ describe('POST /api/routines', () => {
     })
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects invalid JSON body with 400', async () => {

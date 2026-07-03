@@ -18,7 +18,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -135,8 +135,9 @@ describe('GET /api/events', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(2)
-    expect(body[0].title).toBe('Meeting')
+    expect(body.items).toHaveLength(2)
+    expect(body.items[0].title).toBe('Meeting')
+    expect(body.next_cursor).toBeNull()
   })
 
   it('returns events filtered by calendar_id', async () => {
@@ -151,8 +152,8 @@ describe('GET /api/events', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(1)
-    expect(body[0].calendar_id).toBe(TEST_CALENDAR_ID)
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0].calendar_id).toBe(TEST_CALENDAR_ID)
   })
 
   it('returns empty array when no events match', async () => {
@@ -163,7 +164,8 @@ describe('GET /api/events', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual([])
+    expect(body.items).toEqual([])
+    expect(body.next_cursor).toBeNull()
   })
 
   it('returns 400 when start/end query params are missing', async () => {
@@ -214,14 +216,14 @@ describe('POST /api/events', () => {
     expect(body.id).toBeDefined()
   })
 
-  it('rejects request with missing title as 400 validation error', async () => {
+  it('rejects request with missing title as 422 validation error', async () => {
     mockAuthWithTables({})
 
     const { title: _title, ...noTitle } = validEventBody()
     const req = createRequest('POST', '/api/events', noTitle)
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects unauthenticated request with 401', async () => {

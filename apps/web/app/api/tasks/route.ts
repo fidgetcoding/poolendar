@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError, validationError } from '../../../lib/auth/helpers'
 import { createTaskSchema } from '@poolendar/validators'
+import { paginate } from '../../../lib/pagination'
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request)
@@ -12,6 +13,29 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status')
   const board = searchParams.get('board')
   const parentId = searchParams.get('parent_id')
+  const includeChildren = searchParams.get('include_children')
+  const scheduledFrom = searchParams.get('scheduled_from')
+  const scheduledTo = searchParams.get('scheduled_to')
+  const dueFrom = searchParams.get('due_from')
+  const dueTo = searchParams.get('due_to')
+  const tagId = searchParams.get('tag_id')
+
+  // Optional tag filter: resolve the tag's task ids first (RLS-scoped), then
+  // constrain the task query. An empty result short-circuits to an empty page.
+  let tagTaskIds: string[] | null = null
+  if (tagId) {
+    const { data: tagRows, error: tagErr } = await supabase
+      .from('task_tags')
+      .select('task_id')
+      .eq('tag_id', tagId)
+    if (tagErr) {
+      return NextResponse.json({ error: 'Failed to filter by tag' }, { status: 500 })
+    }
+    tagTaskIds = (tagRows ?? []).map((r) => r.task_id)
+    if (tagTaskIds.length === 0) {
+      return NextResponse.json(paginate([], searchParams))
+    }
+  }
 
   let query = supabase
     .from('tasks')
@@ -20,17 +44,28 @@ export async function GET(request: NextRequest) {
     .order('position', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false })
 
-  if (status) {
-    query = query.eq('status', status)
-  }
-  if (board) {
-    query = query.eq('board', board)
-  }
+  if (status) query = query.eq('status', status)
+  if (board) query = query.eq('board', board)
+
+  // Parent/children scoping (#23e): split children belong on the calendar and
+  // kanban, so they are NOT hidden by default anymore.
+  //   parent_id=<uuid>       → that parent's children
+  //   include_children=false → top-level tasks only (legacy behavior)
+  //   (default)              → all tasks, children included
   if (parentId) {
     query = query.eq('parent_id', parentId)
-  } else {
+  } else if (includeChildren === 'false') {
     query = query.is('parent_id', null)
   }
+
+  // Scheduled date-range filter (calendar window), by scheduled_start.
+  if (scheduledFrom) query = query.gte('scheduled_start', scheduledFrom)
+  if (scheduledTo) query = query.lte('scheduled_start', scheduledTo)
+  // Due date-range filter.
+  if (dueFrom) query = query.gte('due_date', dueFrom)
+  if (dueTo) query = query.lte('due_date', dueTo)
+
+  if (tagTaskIds) query = query.in('id', tagTaskIds)
 
   const { data: tasks, error } = await query
 
@@ -42,7 +77,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (tasks.length === 0) {
-    return NextResponse.json([])
+    return NextResponse.json(paginate([], searchParams))
   }
 
   const taskIds = tasks.map((t) => t.id)
@@ -72,7 +107,7 @@ export async function GET(request: NextRequest) {
     tags: tagsByTaskId[task.id] ?? [],
   }))
 
-  return NextResponse.json(tasksWithTags)
+  return NextResponse.json(paginate(tasksWithTags, searchParams))
 }
 
 export async function POST(request: NextRequest) {
@@ -115,98 +150,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const taskRow = {
-    user_id: userId,
-    title: input.title,
-    notes: input.notes ?? null,
-    calendar_id: input.calendar_id ?? null,
-    importance: input.importance,
-    time_estimate_minutes: input.time_estimate_minutes ?? null,
-    earliest_start: input.earliest_start ?? null,
-    due_date: input.due_date ?? null,
-    due_date_recurrence: input.due_date_recurrence ?? null,
-    scheduled_start: input.scheduled_start ?? null,
-    scheduled_end: input.scheduled_end ?? null,
-    location: input.location ?? null,
-    visibility: input.visibility,
-    privacy: input.privacy,
-    flexibility: input.flexibility,
-    status: input.status,
-    board: input.board,
-    reminders: input.reminders,
-    completed_at: input.status === 'done' ? new Date().toISOString() : null,
-  }
+  // Atomic multi-table write (task + tags + subtasks) via a SECURITY INVOKER
+  // Postgres function, so a mid-sequence failure can't leave a half-written
+  // task. RLS still applies (user_id := auth.uid() inside the function).
+  const { data: task, error: rpcError } = await supabase.rpc('create_task_with_children', {
+    p_task: input,
+    p_tag_ids: tag_ids,
+    p_subtasks: subtasks ?? [],
+  })
 
-  const { data: task, error: insertError } = await supabase
-    .from('tasks')
-    .insert(taskRow)
-    .select()
-    .single()
-
-  if (insertError || !task) {
+  if (rpcError || !task) {
     return NextResponse.json(
       { error: 'Failed to create task' },
       { status: 500 }
     )
   }
 
-  if (tag_ids.length > 0) {
-    const tagRows = tag_ids.map((tagId) => ({
-      task_id: task.id,
-      tag_id: tagId,
-    }))
-
-    const { error: tagError } = await supabase
-      .from('task_tags')
-      .insert(tagRows)
-
-    if (tagError) {
-      return NextResponse.json(
-        { error: 'Task created but failed to attach tags' },
-        { status: 500 }
-      )
-    }
-  }
-
-  if (subtasks && subtasks.length > 0) {
-    const subtaskRows = subtasks.map((st, idx) => ({
-      task_id: task.id,
-      title: st.title,
-      time_estimate_minutes: st.time_estimate_minutes ?? null,
-      completed: false,
-      position: idx + 1.0,
-    }))
-
-    const { error: subtaskError } = await supabase
-      .from('subtasks')
-      .insert(subtaskRows)
-
-    if (subtaskError) {
-      return NextResponse.json(
-        { error: 'Task created but failed to create subtasks' },
-        { status: 500 }
-      )
-    }
-  }
-
-  // Fetch the complete task with tags
-  const { data: tagRecords } = await supabase
-    .from('task_tags')
-    .select('tag_id, tags(id, name, color, prefix)')
-    .eq('task_id', task.id)
-
-  const { data: subtaskRecords } = await supabase
-    .from('subtasks')
-    .select('*')
-    .eq('task_id', task.id)
-    .order('position', { ascending: true })
-
-  return NextResponse.json(
-    {
-      ...task,
-      tags: (tagRecords ?? []).map((r) => r.tags),
-      subtasks: subtaskRecords ?? [],
-    },
-    { status: 201 }
-  )
+  return NextResponse.json(task, { status: 201 })
 }

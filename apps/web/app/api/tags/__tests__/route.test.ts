@@ -68,7 +68,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key].push(issue.message)
     }
-    return Response.json({ error: 'Validation error', details }, { status: 400 })
+    return Response.json({ error: 'Validation error', details }, { status: 422 })
   },
 }))
 
@@ -127,8 +127,9 @@ describe('GET /api/tags', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json).toHaveLength(1)
-    expect(json[0].name).toBe('work')
+    expect(json.items).toHaveLength(1)
+    expect(json.items[0].name).toBe('work')
+    expect(json.next_cursor).toBeNull()
   })
 
   it('returns 500 when DB query fails', async () => {
@@ -182,7 +183,7 @@ describe('POST /api/tags', () => {
     const { POST } = await import('../route')
     const res = await POST(makeRequest('POST', { color: '#ff6600' }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 400 for invalid color format', async () => {
@@ -192,7 +193,7 @@ describe('POST /api/tags', () => {
     const { POST } = await import('../route')
     const res = await POST(makeRequest('POST', { name: 'test', color: 'red' }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 400 for color with wrong length', async () => {
@@ -202,7 +203,7 @@ describe('POST /api/tags', () => {
     const { POST } = await import('../route')
     const res = await POST(makeRequest('POST', { name: 'test', color: '#fff' }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 409 for duplicate tag name', async () => {
@@ -329,7 +330,7 @@ describe('PATCH /api/tags/:id', () => {
       { params: Promise.resolve({ id: 'tag-1' }) },
     )
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 })
 

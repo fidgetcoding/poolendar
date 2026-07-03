@@ -35,7 +35,7 @@ export function BookingPagesTab() {
       const res = await fetch('/api/booking-links')
       if (res.ok) {
         const data = await res.json()
-        setLinks(data)
+        setLinks(Array.isArray(data) ? data : (data?.items ?? []))
       }
     } catch {
       toast.error('Failed to load booking pages')

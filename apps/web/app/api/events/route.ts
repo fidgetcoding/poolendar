@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError, validationError } from '../../../lib/auth/helpers'
 import { createGoogleEvent } from '../../../lib/google/calendar'
 import { createEventSchema } from '@poolendar/validators'
+import { paginate } from '../../../lib/pagination'
+import type { CalendarItem } from '@poolendar/types'
+
+// The kinds `GET /api/events` can return. `events` is always included (this is
+// the events endpoint); `tasks` and `routines` are on by default and can be
+// narrowed via `?include=`. This is the spec #22 acceptance surface: a task
+// created with scheduled_start/scheduled_end comes back here without any drag.
+const ALL_KINDS = ['events', 'tasks', 'routines'] as const
+const DEFAULT_INCLUDE = 'events,tasks,routines'
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request)
@@ -21,28 +30,107 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  let query = supabase
-    .from('events')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('start_time', start)
-    .lte('end_time', end)
-    .order('start_time', { ascending: true })
+  const includeRaw = (searchParams.get('include') ?? DEFAULT_INCLUDE)
+    .split(',')
+    .map((s) => s.trim())
+  const wantEvents = includeRaw.includes('events')
+  const wantTasks = includeRaw.includes('tasks')
+  const wantRoutines = includeRaw.includes('routines')
 
-  if (calendarId) {
-    query = query.eq('calendar_id', calendarId)
+  const items: CalendarItem[] = []
+
+  // --- Events ---------------------------------------------------------------
+  if (wantEvents) {
+    let query = supabase
+      .from('events')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('start_time', start)
+      .lte('end_time', end)
+      .order('start_time', { ascending: true })
+
+    if (calendarId) query = query.eq('calendar_id', calendarId)
+
+    const { data, error } = await query
+    if (error) {
+      return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 })
+    }
+    for (const e of data ?? []) items.push({ ...(e as object), kind: 'event' } as CalendarItem)
   }
 
-  const { data, error } = await query
+  // --- Scheduled tasks (spec #22) -------------------------------------------
+  // A task overlaps the window when scheduled_start <= end AND scheduled_end >=
+  // start. Split parents have their schedule cleared, so they fall out here and
+  // only their children render (#23e). No parent_id filter: children belong on
+  // the calendar exactly like standalone scheduled tasks.
+  if (wantTasks) {
+    let query = supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .not('scheduled_start', 'is', null)
+      .lte('scheduled_start', end)
+      .gte('scheduled_end', start)
+      .order('scheduled_start', { ascending: true })
 
-  if (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch events' },
-      { status: 500 }
-    )
+    if (calendarId) query = query.eq('calendar_id', calendarId)
+
+    const { data, error } = await query
+    if (error) {
+      return NextResponse.json({ error: 'Failed to fetch scheduled tasks' }, { status: 500 })
+    }
+    for (const t of data ?? []) items.push({ ...(t as object), kind: 'task' } as CalendarItem)
   }
 
-  return NextResponse.json(data)
+  // --- Routine instances (best-effort; #22 "if cheap") ----------------------
+  // Materialized instances whose date falls in the window, joined to their
+  // routine for title/time. A failure here degrades to "no routines" rather
+  // than failing the whole calendar read.
+  if (wantRoutines) {
+    const startDate = start.slice(0, 10)
+    const endDate = end.slice(0, 10)
+    const { data } = await supabase
+      .from('routine_instances')
+      .select(
+        'id, routine_id, date, status, override_start_time, override_end_time, override_title, ' +
+          'routines!inner(user_id, title, start_time, end_time, timezone, calendar_id)'
+      )
+      .gte('date', startDate)
+      .lte('date', endDate)
+
+    for (const ri of (data ?? []) as any[]) {
+      const routine = ri.routines
+      if (!routine || routine.user_id !== userId) continue
+      if (calendarId && routine.calendar_id !== calendarId) continue
+      const date: string = ri.date
+      const startTime: string = ri.override_start_time ?? routine.start_time
+      const endTime: string = ri.override_end_time ?? routine.end_time
+      const title: string = ri.override_title ?? routine.title
+      items.push({
+        kind: 'routine_instance',
+        id: ri.id,
+        routine_id: ri.routine_id,
+        date,
+        status: ri.status,
+        title,
+        scheduled_start: `${date}T${startTime}`,
+        scheduled_end: `${date}T${endTime}`,
+        timezone: routine.timezone,
+        calendar_id: routine.calendar_id ?? null,
+      })
+    }
+  }
+
+  // Unify in calendar order (by effective start), then page.
+  items.sort((a, b) => effectiveStart(a).localeCompare(effectiveStart(b)))
+
+  return NextResponse.json(paginate(items, searchParams))
+}
+
+function effectiveStart(item: CalendarItem): string {
+  if (item.kind === 'event') return item.start_time
+  if (item.kind === 'task') return item.scheduled_start ?? ''
+  return item.scheduled_start
 }
 
 export async function POST(request: NextRequest) {

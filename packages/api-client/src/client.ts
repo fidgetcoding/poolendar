@@ -1,15 +1,17 @@
 import type {
   CalendarEvent,
+  CalendarItem,
   Task,
   Routine,
   BookingLink,
   Booking,
+  Calendar,
   Tag,
   Schedule,
   Subtask,
   Profile,
   ApiKey,
-  PaginatedResponse,
+  Paginated,
   SearchResult,
 } from '@poolendar/types'
 
@@ -17,6 +19,20 @@ export interface ClientConfig {
   baseUrl: string
   apiKey?: string
   token?: string
+}
+
+/** Cursor-pagination params accepted by every list endpoint (spec #76). */
+export interface PageParams {
+  cursor?: string
+  limit?: number
+}
+
+/** A connected Google account grouped with its sub-calendars (GET /api/calendars). */
+export interface CalendarAccount {
+  id: string
+  email: string
+  calendars: Calendar[]
+  [key: string]: unknown
 }
 
 export class PoolendarClient {
@@ -42,8 +58,15 @@ export class PoolendarClient {
     return res.json()
   }
 
-  // Events
-  async listEvents(params: { start: string; end: string; calendar_id?: string }) {
+  // Calendars
+  async listCalendars() { return this.request<{ accounts: CalendarAccount[] }>('/api/calendars') }
+
+  // Events — unions events + scheduled tasks (+ routine instances) in the window
+  // per spec #22. Each item carries a `kind` discriminator. `include` narrows
+  // the kinds (default: events,tasks,routines).
+  async listEvents(
+    params: { start: string; end: string; calendar_id?: string; include?: string } & PageParams
+  ) {
     const searchParams = new URLSearchParams()
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -51,7 +74,7 @@ export class PoolendarClient {
       }
     })
     const q = searchParams.toString()
-    return this.request<CalendarEvent[]>(`/api/events${q ? `?${q}` : ''}`)
+    return this.request<Paginated<CalendarItem>>(`/api/events${q ? `?${q}` : ''}`)
   }
   async getEvent(id: string) { return this.request<CalendarEvent>(`/api/events/${id}`) }
   async createEvent(data: Partial<CalendarEvent>) { return this.request<CalendarEvent>('/api/events', { method: 'POST', body: JSON.stringify(data) }) }
@@ -62,7 +85,19 @@ export class PoolendarClient {
   }
 
   // Tasks
-  async listTasks(params?: { status?: string; board?: string; parent_id?: string }) {
+  async listTasks(
+    params?: {
+      status?: string
+      board?: string
+      parent_id?: string
+      include_children?: boolean
+      scheduled_from?: string
+      scheduled_to?: string
+      due_from?: string
+      due_to?: string
+      tag_id?: string
+    } & PageParams
+  ) {
     const searchParams = new URLSearchParams()
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -72,15 +107,18 @@ export class PoolendarClient {
       })
     }
     const q = searchParams.toString()
-    return this.request<Task[]>(`/api/tasks${q ? `?${q}` : ''}`)
+    return this.request<Paginated<Task>>(`/api/tasks${q ? `?${q}` : ''}`)
   }
   async getTask(id: string) { return this.request<Task>(`/api/tasks/${id}`) }
   async createTask(data: Partial<Task>) { return this.request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(data) }) }
   async updateTask(id: string, data: Partial<Task>) { return this.request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteTask(id: string) { return this.request<void>(`/api/tasks/${id}`, { method: 'DELETE' }) }
   async moveTask(id: string, data: { status?: string; position?: number; board?: string }) { return this.request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify(data) }) }
-  async splitTask(id: string, data?: { chunks?: Array<{ title: string; time_estimate?: string }> }) { return this.request<Task[]>(`/api/tasks/${id}/split`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }) }
+  // Split into N equal chunks when the task has no subtasks; the route expects a
+  // number, not an array of chunk objects.
+  async splitTask(id: string, data?: { chunks?: number }) { return this.request<Task & { children: Task[] }>(`/api/tasks/${id}/split`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }) }
   async scheduleTask(id: string, data: { scheduled_start: string; scheduled_end: string }) { return this.request<Task>(`/api/tasks/${id}/schedule`, { method: 'POST', body: JSON.stringify(data) }) }
+  async reflowDay(data: { date: string; timezone?: string }) { return this.request<{ date: string; timezone: string; moved: number; tasks: Task[] }>('/api/tasks/reflow', { method: 'POST', body: JSON.stringify(data) }) }
   async completeTask(id: string) { return this.request<Task>(`/api/tasks/${id}/complete`, { method: 'POST' }) }
   async reopenTask(id: string) { return this.request<Task>(`/api/tasks/${id}/reopen`, { method: 'POST' }) }
 
@@ -89,10 +127,11 @@ export class PoolendarClient {
   async createSubtask(taskId: string, data: Partial<Subtask>) { return this.request<Subtask>(`/api/tasks/${taskId}/subtasks`, { method: 'POST', body: JSON.stringify(data) }) }
   async updateSubtask(taskId: string, subtaskId: string, data: Partial<Subtask>) { return this.request<Subtask>(`/api/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteSubtask(taskId: string, subtaskId: string) { return this.request<void>(`/api/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'DELETE' }) }
-  async reorderSubtasks(taskId: string, order: string[]) { return this.request<Subtask[]>(`/api/tasks/${taskId}/subtasks/reorder`, { method: 'POST', body: JSON.stringify({ order }) }) }
+  // The reorder route expects `subtask_ids` (the ordered id list), not `order`.
+  async reorderSubtasks(taskId: string, order: string[]) { return this.request<Subtask[]>(`/api/tasks/${taskId}/subtasks/reorder`, { method: 'POST', body: JSON.stringify({ subtask_ids: order }) }) }
 
   // Routines
-  async listRoutines() { return this.request<Routine[]>('/api/routines') }
+  async listRoutines(params?: PageParams) { return this.request<Paginated<Routine>>(`/api/routines${qs(params)}`) }
   async getRoutine(id: string) { return this.request<Routine>(`/api/routines/${id}`) }
   async createRoutine(data: Partial<Routine>) { return this.request<Routine>('/api/routines', { method: 'POST', body: JSON.stringify(data) }) }
   async updateRoutine(id: string, data: Partial<Routine>) { return this.request<Routine>(`/api/routines/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
@@ -106,21 +145,21 @@ export class PoolendarClient {
   }
 
   // Tags
-  async listTags() { return this.request<Tag[]>('/api/tags') }
+  async listTags(params?: PageParams) { return this.request<Paginated<Tag>>(`/api/tags${qs(params)}`) }
   async createTag(data: { name: string; color: string; prefix?: string }) { return this.request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) }) }
   async getTag(id: string) { return this.request<Tag>(`/api/tags/${id}`) }
   async updateTag(id: string, data: Partial<Tag>) { return this.request<Tag>(`/api/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteTag(id: string) { return this.request<void>(`/api/tags/${id}`, { method: 'DELETE' }) }
 
   // Booking Links
-  async listBookingLinks() { return this.request<BookingLink[]>('/api/booking-links') }
+  async listBookingLinks(params?: PageParams) { return this.request<Paginated<BookingLink>>(`/api/booking-links${qs(params)}`) }
   async getBookingLink(id: string) { return this.request<BookingLink>(`/api/booking-links/${id}`) }
   async createBookingLink(data: Partial<BookingLink>) { return this.request<BookingLink>('/api/booking-links', { method: 'POST', body: JSON.stringify(data) }) }
   async updateBookingLink(id: string, data: Partial<BookingLink>) { return this.request<BookingLink>(`/api/booking-links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteBookingLink(id: string) { return this.request<void>(`/api/booking-links/${id}`, { method: 'DELETE' }) }
 
   // Bookings
-  async listBookings(linkId: string) { return this.request<Booking[]>(`/api/booking-links/${linkId}/bookings`) }
+  async listBookings(linkId: string, params?: PageParams) { return this.request<Paginated<Booking>>(`/api/booking-links/${linkId}/bookings${qs(params)}`) }
   async bookSlot(linkId: string, data: { booker_name: string; booker_email: string; start_time: string }) { return this.request<Booking>(`/api/booking-links/${linkId}/book`, { method: 'POST', body: JSON.stringify(data) }) }
   async getAvailability(linkId: string, params: { start: string; end: string; timezone?: string }) {
     const searchParams = new URLSearchParams()
@@ -147,12 +186,14 @@ export class PoolendarClient {
   async convert(data: { source_type: string; source_id: string; target_type: string; calendar_id?: string; repeat_pattern?: string }) { return this.request<CalendarEvent | Task | Routine>('/api/convert', { method: 'POST', body: JSON.stringify(data) }) }
 
   // Search
-  async search(q: string, types?: string[]) {
+  async search(q: string, types?: string[], page?: PageParams) {
     const params = new URLSearchParams({ q })
     if (types?.length) {
       params.set('types', types.join(','))
     }
-    return this.request<SearchResult[]>(`/api/search?${params}`)
+    if (page?.cursor) params.set('cursor', page.cursor)
+    if (page?.limit != null) params.set('limit', String(page.limit))
+    return this.request<Paginated<SearchResult>>(`/api/search?${params}`)
   }
 
   // Profile
@@ -166,6 +207,16 @@ export class PoolendarClient {
   async listApiKeys() { return this.request<ApiKey[]>('/api/api-keys') }
   async createApiKey(name: string) { return this.request<ApiKey & { key: string }>('/api/api-keys', { method: 'POST', body: JSON.stringify({ name }) }) }
   async deleteApiKey(id: string) { return this.request<void>(`/api/api-keys/${id}`, { method: 'DELETE' }) }
+}
+
+/** Build a `?cursor=&limit=` query suffix for a list request (empty when unset). */
+function qs(params?: PageParams): string {
+  if (!params) return ''
+  const sp = new URLSearchParams()
+  if (params.cursor) sp.set('cursor', params.cursor)
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  const s = sp.toString()
+  return s ? `?${s}` : ''
 }
 
 class ApiError extends Error {

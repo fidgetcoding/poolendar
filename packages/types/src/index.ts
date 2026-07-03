@@ -34,5 +34,9 @@ export type {
   ConvertDirection,
   SearchResult,
   PaginatedResponse,
+  Paginated,
+  CalendarItem,
+  CalendarItemKind,
+  RoutineInstanceItem,
   ApiError,
 } from './api'

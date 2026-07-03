@@ -39,7 +39,7 @@ export function TagsTab() {
       const res = await fetch('/api/tags')
       if (res.ok) {
         const data = await res.json()
-        setTags(data)
+        setTags(Array.isArray(data) ? data : (data?.items ?? []))
       }
     } catch {
       toast.error('Failed to load tags')

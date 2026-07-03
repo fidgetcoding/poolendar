@@ -9,6 +9,7 @@ export {
   moveTaskSchema,
   splitTaskSchema,
   scheduleTaskSchema,
+  reflowSchema,
   createSubtaskSchema,
   updateSubtaskSchema,
   reorderSubtasksSchema,

@@ -66,7 +66,8 @@ export function BookingPanel({ onNewLink }: { onNewLink: () => void }) {
     queryFn: async (): Promise<BookingLink[]> => {
       const res = await fetch('/api/booking-links')
       if (!res.ok) throw new Error(`Failed to load booking links (${res.status})`)
-      return (await res.json()) as BookingLink[]
+      const data = await res.json()
+      return (Array.isArray(data) ? data : (data?.items ?? [])) as BookingLink[]
     },
   })
 

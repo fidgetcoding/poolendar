@@ -176,7 +176,7 @@ describe('auth helpers', () => {
   // ── validationError() ─────────────────────────────────────────────────────
 
   describe('validationError()', () => {
-    it('formats Zod issues into a structured 400 response', async () => {
+    it('formats Zod issues into a structured 422 response', async () => {
       const issues = [
         { path: ['title'], message: 'Required' },
         { path: ['start_time'], message: 'Invalid date' },
@@ -186,7 +186,8 @@ describe('auth helpers', () => {
       const response = validationError(issues)
 
       expect(response).toBeInstanceOf(NextResponse)
-      expect(response.status).toBe(400)
+      // Spec #77: Zod validation failures are 422, not 400.
+      expect(response.status).toBe(422)
 
       const body = await response.json()
       expect(body.error).toBe('Validation error')

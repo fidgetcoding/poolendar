@@ -43,20 +43,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const updateFields: Record<string, any> = { status }
+  // status is optional now: a board-only or position-only move leaves the
+  // column (and its completed_at bookkeeping) untouched.
+  const updateFields: Record<string, any> = {}
 
+  if (status !== undefined) {
+    updateFields.status = status
+    if (status === 'done' && existing.status !== 'done') {
+      updateFields.completed_at = new Date().toISOString()
+    } else if (status !== 'done' && existing.status === 'done') {
+      updateFields.completed_at = null
+    }
+  }
   if (board !== undefined) {
     updateFields.board = board
   }
   if (position !== undefined) {
     updateFields.position = position
-  }
-
-  // Handle completed_at transitions
-  if (status === 'done' && existing.status !== 'done') {
-    updateFields.completed_at = new Date().toISOString()
-  } else if (status !== 'done' && existing.status === 'done') {
-    updateFields.completed_at = null
   }
 
   const { data: task, error: updateError } = await supabase

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, isAuthError } from '../../../../../lib/auth/helpers'
+import { paginate } from '../../../../../lib/pagination'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -38,5 +39,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json(paginate(data ?? [], request.nextUrl.searchParams))
 }

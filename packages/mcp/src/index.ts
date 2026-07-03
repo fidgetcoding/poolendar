@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -8,6 +7,8 @@ import {
 import { PoolendarClient } from '@poolendar/api-client'
 import type { ToolDefinition, ToolHandler } from './types.js'
 import {
+  getCalendarToolDefinitions,
+  getCalendarToolHandlers,
   getEventToolDefinitions,
   getEventToolHandlers,
   getTaskToolDefinitions,
@@ -34,7 +35,10 @@ import {
 
 // --- Configuration ---
 
-const POOLENDAR_URL = process.env.POOLENDAR_URL ?? 'http://localhost:3000'
+// Base URL of the Poolendar app the MCP wraps. POOLENDAR_API_URL is the
+// documented name; POOLENDAR_URL is kept as a fallback for older configs.
+const POOLENDAR_URL =
+  process.env.POOLENDAR_API_URL ?? process.env.POOLENDAR_URL ?? 'http://localhost:3000'
 const POOLENDAR_API_KEY = process.env.POOLENDAR_API_KEY
 
 if (!POOLENDAR_API_KEY) {
@@ -62,6 +66,7 @@ const client = new PoolendarClient({
 
 function getAllToolDefinitions(): ToolDefinition[] {
   return [
+    ...getCalendarToolDefinitions(),
     ...getEventToolDefinitions(),
     ...getTaskToolDefinitions(),
     ...getSubtaskToolDefinitions(),
@@ -80,6 +85,7 @@ function getAllToolDefinitions(): ToolDefinition[] {
 
 function getAllToolHandlers(): Record<string, ToolHandler> {
   return {
+    ...getCalendarToolHandlers(client),
     ...getEventToolHandlers(client),
     ...getTaskToolHandlers(client),
     ...getSubtaskToolHandlers(client),

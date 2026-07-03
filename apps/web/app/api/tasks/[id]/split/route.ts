@@ -68,19 +68,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const childTasks: any[] = []
+  // Compute the child rows; the atomic write (insert children + copy tags +
+  // clear subtasks + flip the parent) happens in the split_task RPC.
+  let childRows: Record<string, unknown>[]
 
   if (hasSubtasks) {
     const parentDuration = task.time_estimate_minutes
     const n = subtasks!.length
-
-    // Collect all child task rows for batch insert
-    const childRows = subtasks!.map((subtask) => ({
-      user_id: userId,
-      parent_id: id,
+    childRows = subtasks!.map((subtask) => ({
       calendar_id: task.calendar_id,
       title: subtask.title,
-      notes: null as string | null,
+      notes: null,
       importance: task.importance,
       time_estimate_minutes: subtask.time_estimate_minutes
         ?? (parentDuration ? Math.round(parentDuration / n) : null),
@@ -95,38 +93,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       completed_at: subtask.completed ? new Date().toISOString() : null,
       position: subtask.position,
     }))
-
-    const { data: children, error: childError } = await supabase
-      .from('tasks')
-      .insert(childRows)
-      .select()
-
-    if (childError || !children) {
-      return NextResponse.json({ error: 'Failed to create child tasks' }, { status: 500 })
-    }
-
-    // Batch tag associations if parent had tags
-    if (tagIds.length > 0) {
-      const tagRows = children.flatMap((child: any) =>
-        tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId }))
-      )
-      await supabase.from('task_tags').insert(tagRows)
-    }
-
-    childTasks.push(...children)
-
-    await supabase.from('subtasks').delete().eq('task_id', id)
   } else {
     const n = chunks!
     const perChunk = Math.round(task.time_estimate_minutes! / n)
-
-    // Collect all chunk rows for batch insert
-    const chunkRows = Array.from({ length: n }, (_, i) => ({
-      user_id: userId,
-      parent_id: id,
+    childRows = Array.from({ length: n }, (_, i) => ({
       calendar_id: task.calendar_id,
       title: `${task.title} (${i + 1}/${n})`,
-      notes: null as string | null,
+      notes: null,
       importance: task.importance,
       time_estimate_minutes: perChunk,
       earliest_start: task.earliest_start,
@@ -137,46 +110,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       privacy: task.privacy,
       flexibility: task.flexibility,
       reminders: task.reminders,
+      completed_at: null,
       position: i + 1.0,
     }))
-
-    const { data: children, error: childError } = await supabase
-      .from('tasks')
-      .insert(chunkRows)
-      .select()
-
-    if (childError || !children) {
-      return NextResponse.json({ error: 'Failed to create child tasks' }, { status: 500 })
-    }
-
-    // Batch tag associations if parent had tags
-    if (tagIds.length > 0) {
-      const tagRows = children.flatMap((child: any) =>
-        tagIds.map((tagId: string) => ({ task_id: child.id, tag_id: tagId }))
-      )
-      await supabase.from('task_tags').insert(tagRows)
-    }
-
-    childTasks.push(...children)
   }
 
-  const { data: updatedParent, error: updateError } = await supabase
-    .from('tasks')
-    .update({
-      is_split: true,
-      scheduled_start: null,
-      scheduled_end: null,
-    })
-    .eq('id', id)
-    .select()
-    .single()
+  const { data: result, error: rpcError } = await supabase.rpc('split_task', {
+    p_parent_id: id,
+    p_children: childRows,
+    p_tag_ids: tagIds,
+    p_delete_subtasks: !!hasSubtasks,
+  })
 
-  if (updateError || !updatedParent) {
-    return NextResponse.json({ error: 'Failed to update parent task' }, { status: 500 })
+  if (rpcError || !result?.parent) {
+    return NextResponse.json({ error: 'Failed to split task' }, { status: 500 })
   }
 
   return NextResponse.json({
-    ...updatedParent,
-    children: childTasks,
+    ...result.parent,
+    children: result.children ?? [],
   })
 }

@@ -149,7 +149,7 @@ describe('GET /api/search', () => {
 
     const { GET } = await import('../route')
     const res = await GET(makeSearchRequest('standup'))
-    const json = await res.json()
+    const json = (await res.json()).items
 
     expect(res.status).toBe(200)
     expect(json.length).toBeGreaterThanOrEqual(2)
@@ -176,7 +176,7 @@ describe('GET /api/search', () => {
 
     const { GET } = await import('../route')
     const res = await GET(makeSearchRequest('test', '&types=task'))
-    const json = await res.json()
+    const json = (await res.json()).items
 
     expect(res.status).toBe(200)
     expect(json.every((r: any) => r.type === 'task')).toBe(true)
@@ -190,7 +190,7 @@ describe('GET /api/search', () => {
 
     const { GET } = await import('../route')
     const res = await GET(makeSearchRequest('test', '&limit=5'))
-    const json = await res.json()
+    const json = (await res.json()).items
 
     expect(res.status).toBe(200)
     expect(json.length).toBeLessThanOrEqual(5)
@@ -216,7 +216,7 @@ describe('GET /api/search', () => {
 
     const { GET } = await import('../route')
     const res = await GET(makeSearchRequest('alice'))
-    const json = await res.json()
+    const json = (await res.json()).items
 
     expect(res.status).toBe(200)
     // Should only have one entry for e-1 despite two search strategies matching
@@ -242,7 +242,7 @@ describe('GET /api/search', () => {
 
     const { GET } = await import('../route')
     const res = await GET(makeSearchRequest('meeting'))
-    const json = await res.json()
+    const json = (await res.json()).items
 
     expect(res.status).toBe(200)
     expect(json[0].id).toBe('e-new')

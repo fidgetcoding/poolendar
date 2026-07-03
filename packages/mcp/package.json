@@ -2,27 +2,32 @@
   "name": "poolendar-mcp",
   "version": "0.1.0",
   "type": "module",
-  "description": "MCP server for Poolendar — 68 calendar tools",
+  "description": "MCP server for Poolendar — calendar, tasks, routines, and booking tools for Claude Code and other MCP clients",
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "bin": {
     "poolendar-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
+    "prepack": "pnpm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "@poolendar/api-client": "workspace:*",
-    "@poolendar/types": "workspace:*",
-    "@poolendar/validators": "workspace:*"
+    "@modelcontextprotocol/sdk": "^1.12.1"
   },
   "devDependencies": {
+    "@poolendar/api-client": "workspace:*",
+    "@poolendar/types": "workspace:*",
+    "@poolendar/validators": "workspace:*",
     "@types/node": "^22.15.0",
+    "tsup": "^8.3.5",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^3.2.0"

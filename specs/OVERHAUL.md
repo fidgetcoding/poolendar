@@ -61,8 +61,8 @@ v1 non-goals.
 | 2 | Security foundation | DONE 2026-07-03 |
 | 3 | Resurrect Google sync | DONE 2026-07-03 |
 | 4 | The Great Rewiring (UI) | DONE 2026-07-03 — E2E gate green 17/17 (auth+seed setup projects, flows #12-15/kanban/command-bar) 3 consecutive runs vs live local stack |
-| 5 | API contract + MCP | in progress |
-| 6 | Booking + notifications | pending |
+| 5 | API contract + MCP | DONE 2026-07-03 — #22 proven live via REST AND installed MCP binary (task w/ scheduled times → events range query, kind=task); 59 tools; tarball-install verified; npm publish deferred per directive |
+| 6 | Booking + notifications | in progress |
 | 7 | Ship + guard | pending |
 
 ### Phase 1 — Demolition + spec restore

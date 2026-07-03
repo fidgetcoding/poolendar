@@ -348,10 +348,19 @@ describe('moveTaskSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects missing status', () => {
+  it('accepts a board-only move (status is optional now)', () => {
+    const result = moveTaskSchema.safeParse({ board: 'future' })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a position-only move', () => {
+    const result = moveTaskSchema.safeParse({ position: 2.5 })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an empty move with no fields', () => {
     const result = moveTaskSchema.safeParse({})
     expect(result.success).toBe(false)
-    expect(result.error?.issues[0]?.path).toEqual(['status'])
   })
 
   it('rejects invalid status', () => {

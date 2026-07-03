@@ -27,10 +27,25 @@ export const createTaskSchema = z.object({
 
 export const updateTaskSchema = createTaskSchema.partial()
 
-export const moveTaskSchema = z.object({
-  status: z.enum(['backlog', 'in_progress', 'check', 'done']),
-  board: z.enum(['current', 'future']).optional(),
-  position: z.number().optional(),
+// A move can change any of column (status), board, or intra-column position.
+// All three are optional so a board-only or position-only reorder is valid
+// (previously `status` was required and board-only moves 400'd). At least one
+// field must be present.
+export const moveTaskSchema = z
+  .object({
+    status: z.enum(['backlog', 'in_progress', 'check', 'done']).optional(),
+    board: z.enum(['current', 'future']).optional(),
+    position: z.number().optional(),
+  })
+  .refine(
+    (v) => v.status !== undefined || v.board !== undefined || v.position !== undefined,
+    { message: 'Provide at least one of status, board, or position' }
+  )
+
+// Reschedule a day's flexible scheduled tasks to resolve overlaps (spec #75).
+export const reflowSchema = z.object({
+  date: z.string().date(),
+  timezone: z.string().min(1).max(100).optional(),
 })
 
 export const splitTaskSchema = z.object({

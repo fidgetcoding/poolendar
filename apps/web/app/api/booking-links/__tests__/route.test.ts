@@ -76,7 +76,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key].push(issue.message)
     }
-    return Response.json({ error: 'Validation error', details }, { status: 400 })
+    return Response.json({ error: 'Validation error', details }, { status: 422 })
   },
 }))
 
@@ -166,8 +166,9 @@ describe('GET /api/booking-links', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json).toHaveLength(1)
-    expect(json[0].slug).toBe('intro-call')
+    expect(json.items).toHaveLength(1)
+    expect(json.items[0].slug).toBe('intro-call')
+    expect(json.next_cursor).toBeNull()
   })
 
   it('returns 500 when DB query fails', async () => {
@@ -224,7 +225,7 @@ describe('POST /api/booking-links', () => {
     const { POST } = await import('../route')
     const res = await POST(makeRequest('POST', { name: 'Test' }))
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('returns 409 for duplicate slug', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  getCalendarToolDefinitions,
   getEventToolDefinitions,
   getTaskToolDefinitions,
   getSubtaskToolDefinitions,
@@ -17,6 +18,7 @@ import type { ToolDefinition } from '../types.js'
 /** Collect every tool definition from every domain. */
 function getAllToolDefinitions(): ToolDefinition[] {
   return [
+    ...getCalendarToolDefinitions(),
     ...getEventToolDefinitions(),
     ...getTaskToolDefinitions(),
     ...getSubtaskToolDefinitions(),
@@ -36,18 +38,22 @@ describe('MCP Tool Definitions', () => {
 
   // ---- Count ----
 
-  it('registers exactly 57 tools', () => {
-    expect(tools).toHaveLength(57)
+  it('registers exactly 59 tools', () => {
+    expect(tools).toHaveLength(59)
   })
 
   // ---- Per-domain counts ----
+
+  it('registers 1 calendar tool', () => {
+    expect(getCalendarToolDefinitions()).toHaveLength(1)
+  })
 
   it('registers 6 event tools', () => {
     expect(getEventToolDefinitions()).toHaveLength(6)
   })
 
-  it('registers 10 task tools', () => {
-    expect(getTaskToolDefinitions()).toHaveLength(10)
+  it('registers 11 task tools', () => {
+    expect(getTaskToolDefinitions()).toHaveLength(11)
   })
 
   it('registers 6 subtask tools', () => {
@@ -325,11 +331,13 @@ describe('MCP Tool Definitions', () => {
   // ---- Completeness: every expected tool name exists ----
 
   const EXPECTED_TOOL_NAMES = [
+    // Calendars (1)
+    'list_calendars',
     // Events (6)
     'list_events', 'create_event', 'get_event', 'update_event', 'delete_event', 'rsvp_event',
-    // Tasks (10)
+    // Tasks (11)
     'list_tasks', 'create_task', 'get_task', 'update_task', 'delete_task',
-    'move_task', 'split_task', 'schedule_task', 'close_task', 'reopen_task',
+    'move_task', 'split_task', 'schedule_task', 'close_task', 'reopen_task', 'reflow_day',
     // Subtasks (6)
     'list_subtasks', 'create_subtask', 'update_subtask', 'delete_subtask',
     'reorder_subtasks', 'complete_subtask',
@@ -363,7 +371,7 @@ describe('MCP Tool Definitions', () => {
     }
   })
 
-  it('expected tool list is exactly 57', () => {
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(57)
+  it('expected tool list is exactly 59', () => {
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(59)
   })
 })

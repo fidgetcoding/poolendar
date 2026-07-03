@@ -18,7 +18,7 @@ vi.mock('@/lib/auth/helpers', () => ({
       if (!details[key]) details[key] = []
       details[key]!.push(issue.message)
     }
-    return NextResponse.json({ error: 'Validation error', details }, { status: 400 })
+    return NextResponse.json({ error: 'Validation error', details }, { status: 422 })
   }),
 }))
 
@@ -104,10 +104,11 @@ describe('GET /api/tasks', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(2)
-    expect(body[0].tags).toHaveLength(1)
-    expect(body[0].tags[0].name).toBe('errands')
-    expect(body[1].tags).toHaveLength(0)
+    expect(body.items).toHaveLength(2)
+    expect(body.items[0].tags).toHaveLength(1)
+    expect(body.items[0].tags[0].name).toBe('errands')
+    expect(body.items[1].tags).toHaveLength(0)
+    expect(body.next_cursor).toBeNull()
   })
 
   it('filters tasks by status query param', async () => {
@@ -122,7 +123,7 @@ describe('GET /api/tasks', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(1)
+    expect(body.items).toHaveLength(1)
     expect(supabase.from).toHaveBeenCalledWith('tasks')
   })
 
@@ -138,7 +139,7 @@ describe('GET /api/tasks', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toHaveLength(1)
+    expect(body.items).toHaveLength(1)
   })
 
   it('returns empty array when no tasks exist', async () => {
@@ -151,7 +152,8 @@ describe('GET /api/tasks', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual([])
+    expect(body.items).toEqual([])
+    expect(body.next_cursor).toBeNull()
   })
 
   it('returns 500 when supabase query fails', async () => {
@@ -181,17 +183,19 @@ describe('POST /api/tasks', () => {
       user_id: TEST_USER_ID,
     }
 
-    mockAuthWithTables({
-      tasks: { data: createdTask, error: null },
-      task_tags: { data: [], error: null },
-      subtasks: { data: [], error: null },
-    })
+    // The task + tags + subtasks are written atomically by the
+    // create_task_with_children RPC, which returns the assembled task.
+    const supabase = mockAuthWithTables({}) as any
+    supabase.rpc = vi
+      .fn()
+      .mockResolvedValue({ data: { ...createdTask, tags: [], subtasks: [] }, error: null })
 
     const req = createRequest('POST', '/api/tasks', { title: 'Quick task' })
     const res = await POST(req)
     const body = await res.json()
 
     expect(res.status).toBe(201)
+    expect(supabase.rpc).toHaveBeenCalledWith('create_task_with_children', expect.any(Object))
     expect(body.title).toBe('Quick task')
     expect(body.tags).toEqual([])
     expect(body.subtasks).toEqual([])
@@ -209,11 +213,10 @@ describe('POST /api/tasks', () => {
       user_id: TEST_USER_ID,
     }
 
-    mockAuthWithTables({
-      tasks: { data: createdTask, error: null },
-      task_tags: { data: [], error: null },
-      subtasks: { data: [], error: null },
-    })
+    const supabase = mockAuthWithTables({}) as any
+    supabase.rpc = vi
+      .fn()
+      .mockResolvedValue({ data: { ...createdTask, tags: [], subtasks: [] }, error: null })
 
     const req = createRequest('POST', '/api/tasks', {
       title: 'Calendar task',
@@ -251,17 +254,18 @@ describe('POST /api/tasks', () => {
 
     const createdTask = { id: 't-full', title: 'Full task', user_id: TEST_USER_ID }
 
-    mockAuthWithTables({
+    // `.from('tags')` still runs the cross-tenant ownership pre-check; the RPC
+    // then does the atomic insert and returns the assembled task with tags + subtasks.
+    const supabase = mockAuthWithTables({
       tags: { data: [{ id: TEST_TAG_ID }], error: null }, // ownership check: tag belongs to caller
-      tasks: { data: createdTask, error: null },
-      task_tags: [
-        { data: null, error: null }, // insert tag_ids
-        { data: [{ tag_id: TEST_TAG_ID, tags: { id: TEST_TAG_ID, name: 'work', color: '#0000ff', prefix: null } }], error: null }, // fetch tags
-      ],
-      subtasks: [
-        { data: null, error: null }, // insert subtasks
-        { data: [{ id: 'st-1', title: 'Subtask 1', completed: false, position: 1 }], error: null }, // fetch subtasks
-      ],
+    }) as any
+    supabase.rpc = vi.fn().mockResolvedValue({
+      data: {
+        ...createdTask,
+        tags: [{ id: TEST_TAG_ID, name: 'work', color: '#0000ff', prefix: null }],
+        subtasks: [{ id: 'st-1', title: 'Subtask 1', completed: false, position: 1 }],
+      },
+      error: null,
     })
 
     const req = createRequest('POST', '/api/tasks', fullInput)
@@ -274,13 +278,13 @@ describe('POST /api/tasks', () => {
     expect(body.subtasks).toHaveLength(1)
   })
 
-  it('rejects empty title with 400', async () => {
+  it('rejects empty title with 422', async () => {
     mockAuthWithTables({})
 
     const req = createRequest('POST', '/api/tasks', { title: '' })
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects tag_ids not owned by the caller with 400 (cross-tenant guard)', async () => {
@@ -301,13 +305,13 @@ describe('POST /api/tasks', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('tasks')
   })
 
-  it('rejects missing title with 400', async () => {
+  it('rejects missing title with 422', async () => {
     mockAuthWithTables({})
 
     const req = createRequest('POST', '/api/tasks', { notes: 'no title here' })
     const res = await POST(req)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
   })
 
   it('rejects invalid JSON body with 400', async () => {

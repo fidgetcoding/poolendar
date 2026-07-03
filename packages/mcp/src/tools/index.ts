@@ -1,3 +1,4 @@
+export { getCalendarToolDefinitions, getCalendarToolHandlers } from './calendars.js'
 export { getEventToolDefinitions, getEventToolHandlers } from './events.js'
 export { getTaskToolDefinitions, getTaskToolHandlers } from './tasks.js'
 export { getSubtaskToolDefinitions, getSubtaskToolHandlers } from './subtasks.js'

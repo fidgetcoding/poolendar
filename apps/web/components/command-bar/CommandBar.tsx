@@ -142,8 +142,9 @@ export function CommandBar({
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(value)}`)
         if (res.ok) {
-          const data = (await res.json()) as SearchResult[]
-          setResults(Array.isArray(data) ? data : [])
+          const data = await res.json()
+          const items = Array.isArray(data) ? data : (data?.items ?? [])
+          setResults(items as SearchResult[])
         }
       } catch {
         setResults([])
