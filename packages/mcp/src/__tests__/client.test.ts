@@ -417,28 +417,36 @@ describe('PoolendarClient', () => {
       expect(url).toBe(`${BASE_URL}/api/booking-links`)
     })
 
-    it('bookSlot -> POST /api/booking-links/:id/book', async () => {
+    it('bookSlot -> POST /api/booking/book/:slug', async () => {
       globalThis.fetch = mockFetchResponse({})
-      await client.bookSlot('bl-1', {
+      await client.bookSlot('intro-call', {
         booker_name: 'Alice',
         booker_email: 'alice@example.com',
         start_time: '2026-06-15T14:00:00Z',
       })
       const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/booking-links/bl-1/book`)
+      expect(url).toBe(`${BASE_URL}/api/booking/book/intro-call`)
       expect(opts.method).toBe('POST')
     })
 
-    it('getAvailability -> GET /api/booking-links/:id/availability?...', async () => {
+    it('getAvailability -> GET /api/booking/availability/:slug?...', async () => {
       globalThis.fetch = mockFetchResponse([])
-      await client.getAvailability('bl-1', {
+      await client.getAvailability('intro-call', {
         start: '2026-06-15',
         end: '2026-06-15',
         timezone: 'America/New_York',
       })
       const [url] = lastFetchCall()
-      expect(url).toContain('/api/booking-links/bl-1/availability')
+      expect(url).toContain('/api/booking/availability/intro-call')
       expect(url).toContain('timezone=America')
+    })
+
+    it('listBookings -> GET /api/booking/bookings?link_id=', async () => {
+      globalThis.fetch = mockFetchResponse({ items: [], next_cursor: null })
+      await client.listBookings('bl-1')
+      const [url] = lastFetchCall()
+      expect(url).toContain('/api/booking/bookings')
+      expect(url).toContain('link_id=bl-1')
     })
 
     // Schedules

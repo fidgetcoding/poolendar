@@ -61,12 +61,20 @@ test.describe('kanban board', () => {
     const title = `${SEED.createdTaskPrefix} ${Date.now()}`
     const input = page.getByPlaceholder(/task title/i)
     await input.fill(title)
+
+    // The create goes through supabase-js directly; wait for the actual insert
+    // to land before asserting, so a slow dev-server refetch can't flake this.
+    const inserted = page.waitForResponse(
+      (r) => r.url().includes('/rest/v1/tasks') && r.request().method() === 'POST' && r.ok(),
+      { timeout: 15_000 }
+    )
     await page.getByRole('button', { name: /^create$/i }).click()
+    await inserted
 
     // The new card lands in the Backlog column.
     await expect(
       page.locator('[data-kanban-column="backlog"]').getByText(title)
-    ).toBeVisible()
+    ).toBeVisible({ timeout: 15_000 })
   })
 
   test('a card can be dragged between columns', async ({ page }) => {

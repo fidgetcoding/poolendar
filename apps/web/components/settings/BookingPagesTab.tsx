@@ -1,20 +1,27 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ExternalLink, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, ExternalLink, Copy, Check, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SettingsSection, SettingsToggle } from './SettingsSection'
+import { BookingLinkEditor, type EditableBookingLink } from './BookingLinkEditor'
+import type { AvailabilityRange } from '@/lib/booking/ranges'
 import { toast } from 'sonner'
 
-interface BookingLink {
-  id: string
-  slug: string
-  name: string
-  duration_minutes: number
-  is_public: boolean
-  created_at: string
-}
+type BookingLink = EditableBookingLink & { created_at: string }
+
+// A sensible starting availability so a freshly created link is immediately
+// valid (spec requires availability to be a non-empty array — NOT `{}`, the old
+// bug that made every UI-created link fail validation). The user refines it in
+// the per-link editor.
+const DEFAULT_AVAILABILITY: AvailabilityRange[] = [
+  { day: 'monday', start: '09:00', end: '17:00' },
+  { day: 'tuesday', start: '09:00', end: '17:00' },
+  { day: 'wednesday', start: '09:00', end: '17:00' },
+  { day: 'thursday', start: '09:00', end: '17:00' },
+  { day: 'friday', start: '09:00', end: '17:00' },
+]
 
 export function BookingPagesTab() {
   const [links, setLinks] = useState<BookingLink[]>([])
@@ -25,6 +32,7 @@ export function BookingPagesTab() {
   const [newDuration, setNewDuration] = useState(30)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     loadLinks()
@@ -59,12 +67,13 @@ export function BookingPagesTab() {
           requires_approval: false,
           buffer_minutes: 0,
           minimum_notice_hours: 1,
-          availability: {},
-          conferencing: 'none',
+          // Always the array shape; conferencing is a boolean, never the string 'none'.
+          availability: DEFAULT_AVAILABILITY,
+          conferencing: false,
         }),
       })
       if (!res.ok) {
-        const err = await res.json()
+        const err = await res.json().catch(() => ({}))
         toast.error(err.error || 'Failed to create booking page')
         return
       }
@@ -73,6 +82,7 @@ export function BookingPagesTab() {
       setNewName('')
       setNewSlug('')
       setNewDuration(30)
+      setEditingId(link.id) // open the editor so they can paint real availability
       toast.success('Booking page created')
     } catch {
       toast.error('Failed to create booking page')
@@ -92,9 +102,7 @@ export function BookingPagesTab() {
         toast.error('Failed to update booking page')
         return
       }
-      setLinks((l) =>
-        l.map((link) => (link.id === id ? { ...link, is_public: isPublic } : link))
-      )
+      setLinks((l) => l.map((link) => (link.id === id ? { ...link, is_public: isPublic } : link)))
     } catch {
       toast.error('Failed to update booking page')
     }
@@ -148,16 +156,13 @@ export function BookingPagesTab() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-[var(--fg)]">
-                  {link.name}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-[var(--muted)]">
-                    /{link.slug}
-                  </span>
-                  <span className="text-xs text-[var(--muted)]">
-                    {link.duration_minutes} min
-                  </span>
+                <div className="text-sm font-medium text-[var(--fg)]">{link.name}</div>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span className="text-xs text-[var(--muted)]">/{link.slug}</span>
+                  <span className="text-xs text-[var(--muted)]">{link.duration_minutes} min</span>
+                  {link.requires_approval && (
+                    <span className="text-xs text-[var(--accent)]">approval</span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -166,6 +171,14 @@ export function BookingPagesTab() {
                   onChange={(v) => handleTogglePublic(link.id, v)}
                   label={`Toggle ${link.name} visibility`}
                 />
+                <button
+                  onClick={() => setEditingId((id) => (id === link.id ? null : link.id))}
+                  className="rounded p-1 text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
+                  aria-label={`Edit ${link.name} availability`}
+                  aria-expanded={editingId === link.id}
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => copyUrl(link.slug, link.id)}
                   className="rounded p-1 text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
@@ -188,18 +201,10 @@ export function BookingPagesTab() {
                 </a>
                 {deletingId === link.id ? (
                   <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleDelete(link.id)}
-                    >
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(link.id)}>
                       Confirm
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setDeletingId(null)}
-                    >
+                    <Button size="sm" variant="ghost" onClick={() => setDeletingId(null)}>
                       Cancel
                     </Button>
                   </div>
@@ -214,6 +219,15 @@ export function BookingPagesTab() {
                 )}
               </div>
             </div>
+
+            {editingId === link.id && (
+              <BookingLinkEditor
+                link={link}
+                onSaved={(updated) =>
+                  setLinks((l) => l.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
+                }
+              />
+            )}
           </div>
         ))}
       </div>
@@ -242,15 +256,11 @@ export function BookingPagesTab() {
               label="Slug"
               placeholder="quick-chat"
               value={newSlug}
-              onChange={(e) =>
-                setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
-              }
+              onChange={(e) => setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
             />
           </div>
           <div className="w-24">
-            <label className="block text-sm font-medium text-[var(--fg)] mb-1.5">
-              Duration
-            </label>
+            <label className="block text-sm font-medium text-[var(--fg)] mb-1.5">Duration</label>
             <select
               value={newDuration}
               onChange={(e) => setNewDuration(Number(e.target.value))}
@@ -263,11 +273,7 @@ export function BookingPagesTab() {
             </select>
           </div>
         </div>
-        <Button
-          onClick={handleCreate}
-          disabled={creating || !newName.trim() || !newSlug.trim()}
-          size="sm"
-        >
+        <Button onClick={handleCreate} disabled={creating || !newName.trim() || !newSlug.trim()} size="sm">
           <Plus className="h-4 w-4" />
           Create Booking Page
         </Button>

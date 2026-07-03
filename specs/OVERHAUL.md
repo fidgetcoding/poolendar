@@ -62,8 +62,20 @@ v1 non-goals.
 | 3 | Resurrect Google sync | DONE 2026-07-03 |
 | 4 | The Great Rewiring (UI) | DONE 2026-07-03 — E2E gate green 17/17 (auth+seed setup projects, flows #12-15/kanban/command-bar) 3 consecutive runs vs live local stack |
 | 5 | API contract + MCP | DONE 2026-07-03 — #22 proven live via REST AND installed MCP binary (task w/ scheduled times → events range query, kind=task); 59 tools; tarball-install verified; npm publish deferred per directive |
-| 6 | Booking + notifications | in progress |
-| 7 | Ship + guard | pending |
+| 6 | Booking + notifications | DONE 2026-07-03 — #56 shared pool proven live; approval/decline/cancel flows verified; ICS emails in Resend log-only mode; freeBusy PENDING-LIVE-VERIFICATION (needs OAuth); E2E 18/18 |
+| 7 | Ship + guard | PARKED — awaits Nate's explicit go (see go-signals below) |
+
+### Phase 7 go-signals (nothing proceeds without Nate saying so)
+
+1. **Google OAuth** — "set up google oauth": create Google Cloud OAuth client, add redirect
+   URIs (localhost + prod), put GOOGLE_CLIENT_ID/SECRET in env. Unlocks: calendar connect,
+   event sync, freeBusy live verification, invite sending.
+2. **Paid Supabase** — "create the supabase project" ($10/mo, org ojarqfhafockrybmozmb).
+   Needs legacy HS256 JWT secret enabled for the API-key auth design. Apply migrations 001-014.
+3. **Deploy** — "deploy it": new Vercel project, poolendar.com DNS via Cloudflare, real env
+   secrets (Resend, VAPID, CRON_SECRET), n8n cron schedules for reminders/sync-poll/webhook-renewal,
+   SW network-first fix, Playwright in CI.
+4. **npm publish** — "publish the mcp": poolendar-mcp to npm (currently tarball-verified only).
 
 ### Phase 1 — Demolition + spec restore
 - Restore vault specs (done), tag pre-overhaul (done)

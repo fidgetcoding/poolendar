@@ -2,17 +2,25 @@
 // availability by slug without logging in, so there is no user session.  The
 // service client bypasses RLS to read booking_links, profiles, bookings, and
 // events on behalf of the link owner.
+//
+// Availability is computed against the host's SHARED pool (spec #56): every
+// booking across ALL of the host's links, the host's calendar events, and —
+// when a Google account is connected — Google freeBusy. Any DB read failure
+// fails CLOSED (503), never "everything free".
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { rateLimitAsync } from '@/lib/rate-limit'
+import {
+  timeInTimezoneToUtc,
+  addDaysStr,
+  computeBlockedIntervals,
+  computeAvailableSlots,
+  type AvailabilityWindow,
+  type BusyBooking,
+} from '@/lib/booking/availability'
+import { getGoogleBusyPeriods } from '@/lib/google/freebusy'
 
 type RouteParams = { params: Promise<{ slug: string }> }
-
-interface AvailabilityWindow {
-  day: string
-  start: string
-  end: string
-}
 
 function getServiceClient() {
   return createServerClient(
@@ -20,51 +28,6 @@ function getServiceClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll() { return [] }, setAll() {} } }
   )
-}
-
-function timeToMinutes(time: string): number {
-  const parts = time.split(':').map(Number)
-  return (parts[0] ?? 0) * 60 + (parts[1] ?? 0)
-}
-
-function minutesToTime(minutes: number): string {
-  const h = Math.floor(minutes / 60).toString().padStart(2, '0')
-  const m = (minutes % 60).toString().padStart(2, '0')
-  return `${h}:${m}`
-}
-
-function getDayOfWeek(dateStr: string): string {
-  const parts = dateStr.split('-').map(Number)
-  const date = new Date(parts[0]!, (parts[1] ?? 1) - 1, parts[2] ?? 1)
-  return date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
-}
-
-function timeInTimezoneToUtc(dateStr: string, timeStr: string, timezone: string): Date {
-  const isoStr = `${dateStr}T${timeStr}:00`
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
-  const parts = formatter.formatToParts(new Date(isoStr + 'Z'))
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
-  const utcDate = new Date(isoStr + 'Z')
-  const localInTz = new Date(
-    `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`
-  )
-  const offset = localInTz.getTime() - utcDate.getTime()
-  return new Date(utcDate.getTime() - offset)
-}
-
-function addDaysStr(dateStr: string, days: number): string {
-  const parts = dateStr.split('-').map(Number)
-  const d = new Date(parts[0]!, (parts[1] ?? 1) - 1, (parts[2] ?? 1) + days)
-  return d.toISOString().split('T')[0]!
 }
 
 async function resolveSlug(supabase: ReturnType<typeof getServiceClient>, slug: string) {
@@ -153,74 +116,83 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   const timezone: string = timezoneParam ?? link.timezone
   const durationMinutes: number = link.duration_minutes
-  const bufferMinutes: number = link.buffer_minutes
-  const minimumNoticeHours: number = link.minimum_notice_hours
-  const availability: AvailabilityWindow[] = link.availability
-  const bufferMs = bufferMinutes * 60 * 1000
+  const availability: AvailabilityWindow[] = Array.isArray(link.availability) ? link.availability : []
 
   const rangeStartUtc = timeInTimezoneToUtc(startDate, '00:00', timezone)
   const rangeEndUtc = timeInTimezoneToUtc(addDaysStr(endDate, 1), '00:00', timezone)
 
-  const { data: existingBookings } = await supabase
+  // --- Shared pool: every booking across ALL of the host's links ---
+  // Fetch the host's links (id + their own buffer) so each booking is padded by
+  // the buffer of the link it was made under.
+  const { data: hostLinks, error: linksError } = await supabase
+    .from('booking_links')
+    .select('id, buffer_minutes')
+    .eq('user_id', link.user_id)
+
+  if (linksError || !hostLinks) {
+    // Fail CLOSED — never advertise availability we couldn't verify.
+    return NextResponse.json({ error: 'Availability temporarily unavailable' }, { status: 503 })
+  }
+
+  const bufferByLink = new Map<string, number>(
+    hostLinks.map((l) => [l.id as string, (l.buffer_minutes as number) ?? 0])
+  )
+  const linkIds = hostLinks.map((l) => l.id as string)
+
+  const { data: existingBookings, error: bookingsError } = await supabase
     .from('bookings')
-    .select('start_time, end_time')
-    .eq('booking_link_id', link.id)
+    .select('booking_link_id, start_time, end_time')
+    .in('booking_link_id', linkIds)
     .in('status', ['confirmed', 'pending'])
     .lt('start_time', rangeEndUtc.toISOString())
     .gt('end_time', rangeStartUtc.toISOString())
 
-  const { data: existingEvents } = await supabase
+  if (bookingsError) {
+    return NextResponse.json({ error: 'Availability temporarily unavailable' }, { status: 503 })
+  }
+
+  const { data: existingEvents, error: eventsError } = await supabase
     .from('events')
     .select('start_time, end_time')
     .eq('user_id', link.user_id)
+    .neq('status', 'cancelled')
     .lt('start_time', rangeEndUtc.toISOString())
     .gt('end_time', rangeStartUtc.toISOString())
 
-  const blockedIntervals = [
-    ...(existingBookings ?? []).map((b) => ({
-      start: new Date(b.start_time).getTime() - bufferMs,
-      end: new Date(b.end_time).getTime() + bufferMs,
-    })),
-    ...(existingEvents ?? []).map((e) => ({
-      start: new Date(e.start_time).getTime() - bufferMs,
-      end: new Date(e.end_time).getTime() + bufferMs,
-    })),
-  ]
-
-  const now = new Date()
-  const minimumStartTime = new Date(now.getTime() + minimumNoticeHours * 60 * 60 * 1000)
-
-  const allSlots: { start: string; end: string }[] = []
-  let currentDate = startDate
-
-  while (currentDate <= endDate) {
-    const dayOfWeek = getDayOfWeek(currentDate)
-    const windows = availability.filter((w) => w.day === dayOfWeek)
-
-    for (const window of windows) {
-      const windowStart = timeToMinutes(window.start)
-      const windowEnd = timeToMinutes(window.end)
-      let cursor = windowStart
-
-      while (cursor + durationMinutes <= windowEnd) {
-        const slotStart = timeInTimezoneToUtc(currentDate, minutesToTime(cursor), timezone)
-        const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000)
-
-        if (slotStart >= minimumStartTime) {
-          const slotStartMs = slotStart.getTime()
-          const slotEndMs = slotEnd.getTime()
-          const hasConflict = blockedIntervals.some(
-            (blocked) => slotStartMs < blocked.end && slotEndMs > blocked.start
-          )
-          if (!hasConflict) {
-            allSlots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() })
-          }
-        }
-        cursor += durationMinutes
-      }
-    }
-    currentDate = addDaysStr(currentDate, 1)
+  if (eventsError) {
+    return NextResponse.json({ error: 'Availability temporarily unavailable' }, { status: 503 })
   }
+
+  // Google freeBusy — only when an account is connected; degrades to [] otherwise.
+  const googleBusy = await getGoogleBusyPeriods({
+    googleAccountId: link.google_account_id,
+    timeMin: rangeStartUtc,
+    timeMax: rangeEndUtc,
+  })
+
+  const bookings: BusyBooking[] = (existingBookings ?? []).map((b) => ({
+    start_time: b.start_time,
+    end_time: b.end_time,
+    buffer_minutes: bufferByLink.get(b.booking_link_id) ?? 0,
+  }))
+
+  const blocked = computeBlockedIntervals({
+    bookings,
+    events: existingEvents ?? [],
+    googleBusy,
+    currentBufferMinutes: link.buffer_minutes,
+  })
+
+  const allSlots = computeAvailableSlots({
+    availability,
+    startDate,
+    endDate,
+    timezone,
+    durationMinutes,
+    now: new Date(),
+    minimumNoticeHours: link.minimum_notice_hours,
+    blocked,
+  })
 
   if (dateParam) {
     return NextResponse.json({ slots: allSlots })

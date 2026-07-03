@@ -24,13 +24,29 @@ export const SEED = {
   eventId: '00000000-0000-4000-8000-000000000003',
   kanbanTaskId: '00000000-0000-4000-8000-000000000004',
   searchTaskId: '00000000-0000-4000-8000-000000000005',
+  bookingLinkId: '00000000-0000-4000-8000-000000000006',
   eventTitle: 'E2E Seed Event',
   eventAttendee: 'attendee@example.com',
   kanbanTaskTitle: 'E2E Drag Card',
   searchTaskTitle: 'Weekly Meeting Sync',
+  // Public booking link the external booking-page spec exercises. Availability
+  // covers all seven days 09:00–17:00 so tomorrow is always bookable; buffer and
+  // minimum-notice are 0 so slots never get trimmed.
+  bookingSlug: 'e2e-book',
+  bookingLinkName: 'E2E Booking',
   // Prefix for cards the kanban "+ create" spec makes at runtime (cleaned each run).
   createdTaskPrefix: 'E2E Kanban Create',
 } as const
+
+const ALL_DAY_AVAILABILITY = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+].map((day) => ({ day, start: '09:00', end: '17:00' }))
 
 /** Read the Supabase URL + anon key from the web app's gitignored .env.local. */
 function readSupabaseEnv(): { url: string; anonKey: string } {
@@ -163,6 +179,34 @@ export async function seedBaseline(): Promise<void> {
     { onConflict: 'id' }
   )
   if (searchRes.error) throw new Error(`seed search task: ${searchRes.error.message}`)
+
+  // Public booking link for the external booking-page spec (fixed id → idempotent).
+  const blRes = await supabase.from('booking_links').upsert(
+    {
+      id: SEED.bookingLinkId,
+      user_id: userId,
+      slug: SEED.bookingSlug,
+      name: SEED.bookingLinkName,
+      duration_minutes: 30,
+      availability: ALL_DAY_AVAILABILITY,
+      timezone: 'America/New_York',
+      is_public: true,
+      requires_approval: false,
+      buffer_minutes: 0,
+      minimum_notice_hours: 0,
+      conferencing: false,
+    },
+    { onConflict: 'id' }
+  )
+  if (blRes.error) throw new Error(`seed booking link: ${blRes.error.message}`)
+
+  // Clear any bookings a prior run created against the seed link so its slots
+  // are free again (the booking spec books one slot each run).
+  const bookingCleanup = await supabase
+    .from('bookings')
+    .delete()
+    .eq('booking_link_id', SEED.bookingLinkId)
+  if (bookingCleanup.error) throw new Error(`seed booking cleanup: ${bookingCleanup.error.message}`)
 
   // The kanban "+ create" spec inserts an ad-hoc card each run; clear prior
   // ones so repeated runs start clean (and never collide on a title match).

@@ -2,19 +2,31 @@
 // slots by slug without logging in.  The service client bypasses RLS to read
 // the booking_link + calendars and to insert bookings/Google events on behalf
 // of the link owner.
+//
+// The conflict check runs against the host's SHARED pool (spec #56) and fails
+// CLOSED — if we can't verify the slot is free, we refuse the booking.
+// requires_approval links land as 'pending': no Google event, no booker
+// confirmation until the host approves (spec #53, #57a).
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { bookSlotSchema } from '@poolendar/validators'
-import { createGoogleEvent } from '../../../../../lib/google/calendar'
 import { rateLimitAsync } from '@/lib/rate-limit'
+import {
+  computeBlockedIntervals,
+  hasConflict,
+  type AvailabilityWindow,
+  type BusyBooking,
+} from '@/lib/booking/availability'
+import { getGoogleBusyPeriods } from '@/lib/google/freebusy'
+import {
+  sendBookingConfirmationEmail,
+  notifyHostOfBooking,
+  type BookingRecord,
+  type BookingLinkRecord,
+} from '@/lib/booking/notify'
+import { createBookingGoogleEvent } from '@/lib/booking/google-event'
 
 type RouteParams = { params: Promise<{ slug: string }> }
-
-interface AvailabilityWindow {
-  day: string
-  start: string
-  end: string
-}
 
 function getServiceClient() {
   return createServerClient(
@@ -116,52 +128,79 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  if (!isSlotWithinAvailability(startTime, endTime, link.availability, link.timezone)) {
+  const availability: AvailabilityWindow[] = Array.isArray(link.availability) ? link.availability : []
+  if (!isSlotWithinAvailability(startTime, endTime, availability, link.timezone)) {
     return NextResponse.json(
       { error: 'Selected time slot is outside available hours' },
       { status: 409 }
     )
   }
 
+  // --- Shared-pool conflict check (#56), fail CLOSED ---
   const bufferMs = link.buffer_minutes * 60 * 1000
-  const bufferedStart = new Date(startTime.getTime() - bufferMs)
-  const bufferedEnd = new Date(endTime.getTime() + bufferMs)
+  const windowStart = new Date(startTime.getTime() - bufferMs).toISOString()
+  const windowEnd = new Date(endTime.getTime() + bufferMs).toISOString()
 
-  const { data: conflictingBookings, error: bookingsError } = await supabase
+  const { data: hostLinks, error: linksError } = await supabase
+    .from('booking_links')
+    .select('id, buffer_minutes')
+    .eq('user_id', link.user_id)
+
+  if (linksError || !hostLinks) {
+    return NextResponse.json({ error: 'Failed to check availability' }, { status: 500 })
+  }
+
+  const bufferByLink = new Map<string, number>(
+    hostLinks.map((l) => [l.id as string, (l.buffer_minutes as number) ?? 0])
+  )
+  const linkIds = hostLinks.map((l) => l.id as string)
+
+  const { data: poolBookings, error: bookingsError } = await supabase
     .from('bookings')
-    .select('id')
-    .eq('booking_link_id', link.id)
+    .select('booking_link_id, start_time, end_time')
+    .in('booking_link_id', linkIds)
     .in('status', ['confirmed', 'pending'])
-    .lt('start_time', bufferedEnd.toISOString())
-    .gt('end_time', bufferedStart.toISOString())
-    .limit(1)
+    .lt('start_time', windowEnd)
+    .gt('end_time', windowStart)
 
   if (bookingsError) {
     return NextResponse.json({ error: 'Failed to check availability' }, { status: 500 })
   }
 
-  if (conflictingBookings && conflictingBookings.length > 0) {
-    return NextResponse.json(
-      { error: 'Selected time slot is no longer available' },
-      { status: 409 }
-    )
-  }
-
-  const { data: conflictingEvents, error: eventsError } = await supabase
+  const { data: poolEvents, error: eventsError } = await supabase
     .from('events')
-    .select('id')
+    .select('start_time, end_time')
     .eq('user_id', link.user_id)
-    .lt('start_time', bufferedEnd.toISOString())
-    .gt('end_time', bufferedStart.toISOString())
-    .limit(1)
+    .neq('status', 'cancelled')
+    .lt('start_time', windowEnd)
+    .gt('end_time', windowStart)
 
   if (eventsError) {
     return NextResponse.json({ error: 'Failed to check calendar availability' }, { status: 500 })
   }
 
-  if (conflictingEvents && conflictingEvents.length > 0) {
+  const googleBusy = await getGoogleBusyPeriods({
+    googleAccountId: link.google_account_id,
+    timeMin: new Date(windowStart),
+    timeMax: new Date(windowEnd),
+  })
+
+  const busyBookings: BusyBooking[] = (poolBookings ?? []).map((b) => ({
+    start_time: b.start_time,
+    end_time: b.end_time,
+    buffer_minutes: bufferByLink.get(b.booking_link_id) ?? 0,
+  }))
+
+  const blocked = computeBlockedIntervals({
+    bookings: busyBookings,
+    events: poolEvents ?? [],
+    googleBusy,
+    currentBufferMinutes: link.buffer_minutes,
+  })
+
+  if (hasConflict(startTime.getTime(), endTime.getTime(), blocked)) {
     return NextResponse.json(
-      { error: 'Selected time slot conflicts with an existing event' },
+      { error: 'Selected time slot is no longer available' },
       { status: 409 }
     )
   }
@@ -181,35 +220,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     google_event_id: null as string | null,
   }
 
-  if (link.google_account_id && link.conferencing) {
-    try {
-      const { data: calendar } = await supabase
-        .from('calendars')
-        .select('google_calendar_id')
-        .eq('google_account_id', link.google_account_id)
-        .eq('user_id', link.user_id)
-        .limit(1)
-        .single()
-
-      if (calendar) {
-        const googleEvent = await createGoogleEvent(
-          link.google_account_id,
-          calendar.google_calendar_id,
-          {
-            summary: `${link.name} with ${input.booker_name}`,
-            description: input.booker_notes ?? undefined,
-            start: { dateTime: startTime.toISOString(), timeZone: link.timezone },
-            end: { dateTime: endTime.toISOString(), timeZone: link.timezone },
-            location: link.location ?? undefined,
-            attendees: [{ email: input.booker_email }],
-          },
-          true
-        )
-        bookingRow.google_event_id = googleEvent.id
-      }
-    } catch {
-      // Google Calendar creation failed — continue without it
-    }
+  // Google event + booker invite happen ONLY on immediate confirmation. For
+  // requires_approval links, nothing external happens until the host approves.
+  if (status === 'confirmed') {
+    bookingRow.google_event_id = await createBookingGoogleEvent(supabase, link, {
+      booker_name: input.booker_name,
+      booker_email: input.booker_email,
+      booker_notes: input.booker_notes ?? null,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+    })
   }
 
   const { data: booking, error: insertError } = await supabase
@@ -223,6 +243,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Time slot no longer available' }, { status: 409 })
     }
     return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
+  }
+
+  // Notifications (never block the booking response).
+  const bookingRecord: BookingRecord = {
+    id: booking.id,
+    start_time: booking.start_time,
+    end_time: booking.end_time,
+    booker_name: booking.booker_name,
+    booker_email: booking.booker_email,
+    booker_notes: booking.booker_notes,
+    cancel_token: booking.cancel_token,
+  }
+  const linkRecord: BookingLinkRecord = {
+    name: link.name,
+    slug: link.slug,
+    location: link.location,
+    timezone: link.timezone,
+    user_id: link.user_id,
+  }
+
+  if (status === 'confirmed') {
+    await sendBookingConfirmationEmail(supabase, bookingRecord, linkRecord)
+    await notifyHostOfBooking(supabase, bookingRecord, linkRecord, 'new')
+  } else {
+    await notifyHostOfBooking(supabase, bookingRecord, linkRecord, 'pending')
   }
 
   return NextResponse.json({

@@ -158,15 +158,23 @@ export class PoolendarClient {
   async updateBookingLink(id: string, data: Partial<BookingLink>) { return this.request<BookingLink>(`/api/booking-links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteBookingLink(id: string) { return this.request<void>(`/api/booking-links/${id}`, { method: 'DELETE' }) }
 
-  // Bookings
-  async listBookings(linkId: string, params?: PageParams) { return this.request<Paginated<Booking>>(`/api/booking-links/${linkId}/bookings${qs(params)}`) }
-  async bookSlot(linkId: string, data: { booker_name: string; booker_email: string; start_time: string }) { return this.request<Booking>(`/api/booking-links/${linkId}/book`, { method: 'POST', body: JSON.stringify(data) }) }
-  async getAvailability(linkId: string, params: { start: string; end: string; timezone?: string }) {
+  // Bookings — canonical slug-based external routes (spec #75) + host bookings list.
+  async listBookings(linkId: string, params?: PageParams) {
+    const sp = new URLSearchParams()
+    sp.set('link_id', linkId)
+    if (params?.cursor) sp.set('cursor', params.cursor)
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    return this.request<Paginated<Booking>>(`/api/booking/bookings?${sp}`)
+  }
+  async approveBooking(id: string) { return this.request<Booking>(`/api/booking/bookings/${id}/approve`, { method: 'POST' }) }
+  async declineBooking(id: string) { return this.request<Booking>(`/api/booking/bookings/${id}/decline`, { method: 'POST' }) }
+  async bookSlot(slug: string, data: { booker_name: string; booker_email: string; start_time: string }) { return this.request<Booking>(`/api/booking/book/${slug}`, { method: 'POST', body: JSON.stringify(data) }) }
+  async getAvailability(slug: string, params: { start: string; end: string; timezone?: string }) {
     const searchParams = new URLSearchParams()
     searchParams.set('start', params.start)
     searchParams.set('end', params.end)
     if (params.timezone) searchParams.set('timezone', params.timezone)
-    return this.request(`/api/booking-links/${linkId}/availability?${searchParams}`)
+    return this.request(`/api/booking/availability/${slug}?${searchParams}`)
   }
 
   // Schedules

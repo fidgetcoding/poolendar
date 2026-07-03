@@ -1,22 +1,43 @@
 'use client'
 
 import * as React from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Copy, Check, Globe, Lock, CalendarClock } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Copy, Check, Globe, Lock, CalendarClock, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BookingLink } from '@poolendar/types'
 
 // ---------------------------------------------------------------------------
-// Booking panel (#51–52). A left-drawer list of the user's booking links with a
-// copy-public-URL action and a "+ New booking link" that deep-links into the
-// Settings booking tab. Full booking management is Phase 6 — this panel exists
-// so the ribbon / ⌥S entry point no longer dead-ends.
+// Booking panel (#51–52, #57a). A left-drawer list of the user's booking links
+// with a copy-public-URL action, plus a Pending Approvals queue at the top where
+// the host approves/declines requires_approval bookings.
 // ---------------------------------------------------------------------------
+
+interface PendingBooking {
+  id: string
+  booker_name: string
+  booker_email: string
+  start_time: string
+  booking_links: { name: string; slug: string } | { name: string; slug: string }[]
+}
 
 function bookingUrl(slug: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  // Path-based booking URLs for now (wildcard subdomains land in Phase 6).
   return `${origin}/book/${slug}`
+}
+
+function linkName(b: PendingBooking): string {
+  const l = Array.isArray(b.booking_links) ? b.booking_links[0] : b.booking_links
+  return l?.name ?? 'Booking'
+}
+
+function whenLabel(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(iso))
 }
 
 function LinkRow({ link }: { link: BookingLink }) {
@@ -56,6 +77,69 @@ function LinkRow({ link }: { link: BookingLink }) {
       >
         {copied ? <Check size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
       </button>
+    </div>
+  )
+}
+
+function PendingApprovals() {
+  const queryClient = useQueryClient()
+  const { data: pending = [] } = useQuery({
+    queryKey: ['booking-pending'],
+    queryFn: async (): Promise<PendingBooking[]> => {
+      const res = await fetch('/api/booking/bookings?status=pending')
+      if (!res.ok) throw new Error(`Failed to load pending bookings (${res.status})`)
+      const data = await res.json()
+      return (Array.isArray(data) ? data : (data?.items ?? [])) as PendingBooking[]
+    },
+  })
+
+  const act = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: 'approve' | 'decline' }) => {
+      const res = await fetch(`/api/booking/bookings/${id}/${action}`, { method: 'POST' })
+      if (!res.ok) throw new Error(`Failed to ${action} booking (${res.status})`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['booking-pending'] })
+    },
+  })
+
+  if (pending.length === 0) return null
+
+  return (
+    <div className="mb-2 border-b border-[var(--border)] pb-2">
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent)]">
+        Pending approvals ({pending.length})
+      </div>
+      {pending.map((b) => (
+        <div key={b.id} className="px-3 py-2">
+          <div className="text-sm text-[var(--fg)] truncate">{b.booker_name}</div>
+          <div className="text-[11px] text-[var(--muted)]">
+            {linkName(b)} · {whenLabel(b.start_time)}
+          </div>
+          <div className="mt-1.5 flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => act.mutate({ id: b.id, action: 'approve' })}
+              disabled={act.isPending}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-[var(--bg)] disabled:opacity-50"
+              style={{ backgroundColor: 'var(--success)' }}
+              aria-label={`Approve booking from ${b.booker_name}`}
+            >
+              <Check size={11} /> Approve
+            </button>
+            <button
+              type="button"
+              onClick={() => act.mutate({ id: b.id, action: 'decline' })}
+              disabled={act.isPending}
+              className="flex items-center gap-1 rounded border border-[var(--border)] px-2 py-1 text-[11px] font-medium text-[var(--muted)] hover:text-[var(--destructive)] disabled:opacity-50"
+              aria-label={`Decline booking from ${b.booker_name}`}
+            >
+              <X size={11} /> Decline
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -100,6 +184,8 @@ export function BookingPanel({ onNewLink }: { onNewLink: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
+        <PendingApprovals />
+
         {isLoading && (
           <div className="px-3 py-8 text-center text-sm text-[var(--muted)]">Loading…</div>
         )}

@@ -59,6 +59,7 @@ interface BookingResult {
   start_time: string
   end_time: string
   cancel_token: string
+  status?: 'confirmed' | 'pending'
 }
 
 export default function BookingPage() {
@@ -117,10 +118,15 @@ export default function BookingPage() {
         setBookingLink(data.booking_link)
         setHostProfile(data.host)
 
-        // Generate available dates for the next 60 days based on availability pattern
+        // Generate available dates for the next 60 days based on availability pattern.
+        // Defensive: a link's availability must be an array of {day,start,end}. Older
+        // rows (and the pre-fix create path) could persist `{}` — coerce to [] so the
+        // page renders an empty state instead of crashing on `.map`.
         const dates: Date[] = []
         const today = startOfDay(new Date())
-        const availability = data.booking_link.availability || []
+        const availability = Array.isArray(data.booking_link.availability)
+          ? data.booking_link.availability
+          : []
         const dayMap: Record<string, number> = {
           sunday: 0,
           monday: 1,
@@ -334,6 +340,7 @@ export default function BookingPage() {
               cancelToken={bookingResult.cancel_token}
               bookingSlug={slug}
               timeFormat={timeFormat}
+              status={bookingResult.status ?? 'confirmed'}
             />
           ) : (
             <>
@@ -385,11 +392,19 @@ export default function BookingPage() {
 
               {/* Step: Date selection */}
               {(step === 'date' || step === 'time' || step === 'form') && (
-                <BookingCalendar
-                  availableDates={availableDates}
-                  selectedDate={selectedDate}
-                  onSelectDate={handleSelectDate}
-                />
+                availableDates.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <p className="text-sm text-[var(--muted)]">
+                      This host hasn’t opened any availability yet. Please check back later.
+                    </p>
+                  </div>
+                ) : (
+                  <BookingCalendar
+                    availableDates={availableDates}
+                    selectedDate={selectedDate}
+                    onSelectDate={handleSelectDate}
+                  />
+                )
               )}
 
               {/* Step: Time slot selection */}

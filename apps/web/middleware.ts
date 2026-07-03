@@ -38,6 +38,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/callback') ||
     pathname.startsWith('/(booking)') ||
+    // Path-based booking pages (the /book/{slug} fallback the UI copies) are
+    // public — external visitors have no session.
+    pathname.startsWith('/book/') ||
     pathname.startsWith('/api/booking/availability') ||
     pathname.startsWith('/api/booking/book') ||
     pathname.startsWith('/api/webhooks') ||
