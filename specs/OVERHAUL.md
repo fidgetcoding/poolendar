@@ -47,6 +47,12 @@ v1 non-goals.
   New project must keep a legacy HS256 JWT secret available (`SUPABASE_JWT_SECRET`) for the
   Phase 2 API-key→user-JWT auth design.
 
+- **NO Google OAuth and NO paid database until Nate says otherwise (2026-07-03, his call).**
+  He wants to mess around with the app on the free local stack first. Email/password auth +
+  local Supabase cover everything except Google sync. Do not set up Google Cloud credentials,
+  do not create the $10/mo Supabase project, do not deploy — Phase 7 and the Google-sync
+  E2E verification wait for his explicit go.
+
 ## Phases
 
 | # | Phase | Status |
