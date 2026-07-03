@@ -1,6 +1,44 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
+import { SEED } from './seed'
 
 const E2E_LIVE = !!process.env.E2E_BASE
+
+/**
+ * Enter the full kanban board: open the task panel from the ribbon, then flip
+ * the sidebar/board toggle to board mode (the desktop kanban entry point, #37).
+ */
+async function openBoard(page: Page) {
+  await page.getByRole('button', { name: 'Tasks', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Board view', exact: true }).click()
+  await expect(page.getByText('Backlog', { exact: true })).toBeVisible()
+}
+
+/**
+ * Manual pointer drag from a card into a target column. @dnd-kit's PointerSensor
+ * is distance-activated, so dragTo() does not work — we press, move past the
+ * threshold, then step to the column's drop zone.
+ */
+async function dragCardToColumn(page: Page, card: Locator, status: string) {
+  // The drag listeners live on the card's grip handle (not the whole card), so
+  // the press must land on the handle to activate the sensor.
+  const handle = card.locator('.cursor-grab').first()
+  const handleBox = await handle.boundingBox()
+  const column = page.locator(`[data-kanban-column="${status}"]`)
+  const colBox = await column.boundingBox()
+  if (!handleBox || !colBox) throw new Error('missing drag geometry')
+
+  const sx = handleBox.x + handleBox.width / 2
+  const sy = handleBox.y + handleBox.height / 2
+  const tx = colBox.x + colBox.width / 2
+  const ty = colBox.y + Math.min(140, colBox.height / 2)
+
+  await page.mouse.move(sx, sy)
+  await page.mouse.down()
+  await page.mouse.move(sx + 8, sy + 8) // exceed the 5px activation distance
+  await page.mouse.move(tx, ty, { steps: 16 })
+  await page.mouse.move(tx, ty) // settle over the drop zone
+  await page.mouse.up()
+}
 
 test.describe('kanban board', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,29 +47,42 @@ test.describe('kanban board', () => {
   })
 
   test('board view toggle reveals the four columns', async ({ page }) => {
-    // Open the task panel, then switch to board (grid icon) view mode.
-    await page.getByRole('button', { name: /^tasks$/i }).first().click()
-    await page.getByRole('button', { name: /board view/i }).click()
-
+    await openBoard(page)
     for (const col of ['Backlog', 'In Progress', 'Check', 'Done']) {
-      await expect(page.getByText(col, { exact: false })).toBeVisible()
+      await expect(page.getByText(col, { exact: true })).toBeVisible()
     }
   })
 
   test('a column header + creates a task in that column', async ({ page }) => {
-    await page.getByRole('button', { name: /board view/i }).click()
+    await openBoard(page)
     await page.getByRole('button', { name: /add task to backlog/i }).click()
+
+    // Unique title per run so repeated runs never collide on the match.
+    const title = `${SEED.createdTaskPrefix} ${Date.now()}`
     const input = page.getByPlaceholder(/task title/i)
-    await input.fill('E2E kanban task')
+    await input.fill(title)
     await page.getByRole('button', { name: /^create$/i }).click()
-    await expect(page.getByText('E2E kanban task')).toBeVisible()
+
+    // The new card lands in the Backlog column.
+    await expect(
+      page.locator('[data-kanban-column="backlog"]').getByText(title)
+    ).toBeVisible()
   })
 
   test('a card can be dragged between columns', async ({ page }) => {
-    await page.getByRole('button', { name: /board view/i }).click()
-    const card = page.locator('[data-task-card]').first()
-    const target = page.getByText('In Progress').first()
-    await card.dragTo(target)
+    await openBoard(page)
+
+    // The seeded drag card is the first card in Backlog (lowest position).
+    const card = page.locator(`[data-task-card][data-task-id="${SEED.kanbanTaskId}"]`)
     await expect(card).toBeVisible()
+
+    await dragCardToColumn(page, card, 'in_progress')
+
+    // Moving columns changes status: the card now lives under In Progress.
+    await expect(
+      page.locator('[data-kanban-column="in_progress"]').locator(
+        `[data-task-id="${SEED.kanbanTaskId}"]`
+      )
+    ).toBeVisible()
   })
 })

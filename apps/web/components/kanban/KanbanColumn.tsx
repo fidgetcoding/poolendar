@@ -65,6 +65,7 @@ export function KanbanColumn({
 
   return (
     <div
+      data-kanban-column={status}
       className="flex flex-col min-w-[85vw] md:min-w-[280px] max-w-none md:max-w-[340px] w-full shrink-0 snap-center rounded-xl transition-colors duration-200"
       style={{
         backgroundColor: isOver

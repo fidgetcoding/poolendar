@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { SEED } from './seed'
 
 const E2E_LIVE = !!process.env.E2E_BASE
 
@@ -15,10 +16,13 @@ test.describe('command bar (#72a–c)', () => {
 
   test('actions are grouped and dispatch — Open Kanban switches to board', async ({ page }) => {
     await page.keyboard.press('Meta+k')
-    await expect(page.getByText('Actions', { exact: true })).toBeVisible()
-    await expect(page.getByText('Navigation', { exact: true })).toBeVisible()
+    // cmdk renders each section as an accessible group named by its heading.
+    // (Targeting the group role avoids the heading/label text appearing twice.)
+    await expect(page.getByRole('group', { name: 'Actions' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Navigation' })).toBeVisible()
+
     await page.getByText('Open Kanban Board').click()
-    await expect(page.getByText('Backlog', { exact: false })).toBeVisible()
+    await expect(page.getByText('Backlog', { exact: true })).toBeVisible()
   })
 
   test('Go to Today action closes the palette', async ({ page }) => {
@@ -30,6 +34,11 @@ test.describe('command bar (#72a–c)', () => {
   test('typing a query shows grouped search results', async ({ page }) => {
     await page.keyboard.press('Meta+k')
     await page.getByPlaceholder(/what do you need/i).fill('meeting')
-    await expect(page.getByText(/search results/i)).toBeVisible({ timeout: 5000 })
+
+    // The seeded "Weekly Meeting Sync" task surfaces under a Search Results group.
+    await expect(page.getByRole('group', { name: /search results/i })).toBeVisible({
+      timeout: 5000,
+    })
+    await expect(page.getByText(SEED.searchTaskTitle)).toBeVisible()
   })
 })

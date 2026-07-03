@@ -60,8 +60,8 @@ v1 non-goals.
 | 1 | Demolition + spec restore | DONE 2026-07-03 |
 | 2 | Security foundation | DONE 2026-07-03 |
 | 3 | Resurrect Google sync | DONE 2026-07-03 |
-| 4 | The Great Rewiring (UI) | 4a+4b DONE 2026-07-03; E2E gate in progress — auth setup fixed (5/16 green), e2e-fix pass on remaining 11 selector-drift failures was in flight at pause; its working-tree changes may be uncommitted |
-| 5 | API contract + MCP | pending |
+| 4 | The Great Rewiring (UI) | DONE 2026-07-03 — E2E gate green 17/17 (auth+seed setup projects, flows #12-15/kanban/command-bar) 3 consecutive runs vs live local stack |
+| 5 | API contract + MCP | in progress |
 | 6 | Booking + notifications | pending |
 | 7 | Ship + guard | pending |
 

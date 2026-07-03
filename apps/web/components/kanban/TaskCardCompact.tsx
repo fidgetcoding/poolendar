@@ -64,6 +64,8 @@ export const TaskCardCompact = React.memo(function TaskCardCompact({
   return (
     <div
       ref={setNodeRef}
+      data-task-card
+      data-task-id={task.id}
       style={{
         ...style,
         backgroundColor: 'var(--surface)',

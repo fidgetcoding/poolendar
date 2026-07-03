@@ -16,6 +16,10 @@ export default defineConfig({
   use: {
     baseURL: E2E_BASE || `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',
+    // Pin timezone + locale so seeded times/dates render deterministically
+    // regardless of the host machine's settings.
+    timezoneId: 'America/New_York',
+    locale: 'en-US',
   },
   projects: [
     // Public pages, no session (login renders, redirects, etc.)
@@ -24,12 +28,13 @@ export default defineConfig({
       testMatch: /smoke\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
-    // Signs in via the real login form and saves storageState.
-    { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
+    // Signs in via the real login form (auth.setup) and seeds baseline data
+    // (seed.setup) before the authed project runs.
+    { name: 'setup', testMatch: /\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
     // Authenticated app flows reuse the saved session.
     {
       name: 'chromium',
-      testIgnore: [/smoke\.spec\.ts/, /auth\.setup\.ts/],
+      testIgnore: [/smoke\.spec\.ts/, /\.setup\.ts/],
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],

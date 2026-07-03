@@ -432,6 +432,7 @@ export function PreviewPopover({
         <button
           type="button"
           onClick={handleDeleteClick}
+          aria-label="Delete"
           className={cn(
             'flex items-center justify-center w-8 h-8 rounded-md',
             'text-[var(--muted)] hover:text-[var(--destructive)]',

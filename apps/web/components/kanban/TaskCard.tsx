@@ -101,6 +101,8 @@ export const TaskCard = React.memo(function TaskCard({
     <div
       ref={isDragOverlay ? undefined : setNodeRef}
       style={cardStyle}
+      data-task-card
+      data-task-id={task.id}
       className="group rounded-lg border p-3 cursor-pointer transition-all duration-150 hover:border-[color:var(--accent)]/30 hover:shadow-md"
       onClick={() => onTaskClick(task)}
       role="button"
