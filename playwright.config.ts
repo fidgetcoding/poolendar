@@ -17,7 +17,26 @@ export default defineConfig({
     baseURL: E2E_BASE || `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // Public pages, no session (login renders, redirects, etc.)
+    {
+      name: 'public',
+      testMatch: /smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Signs in via the real login form and saves storageState.
+    { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
+    // Authenticated app flows reuse the saved session.
+    {
+      name: 'chromium',
+      testIgnore: [/smoke\.spec\.ts/, /auth\.setup\.ts/],
+      dependencies: ['setup'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: 'e2e/.auth/user.json',
+      },
+    },
+  ],
   webServer: E2E_BASE
     ? undefined
     : {
