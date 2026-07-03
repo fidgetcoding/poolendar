@@ -7,8 +7,6 @@ import {
   getTagToolDefinitions,
   getBookingToolDefinitions,
   getScheduleToolDefinitions,
-  getFrameToolDefinitions,
-  getAutoScheduleToolDefinitions,
   getConvertToolDefinitions,
   getSearchToolDefinitions,
   getProfileToolDefinitions,
@@ -26,8 +24,6 @@ function getAllToolDefinitions(): ToolDefinition[] {
     ...getTagToolDefinitions(),
     ...getBookingToolDefinitions(),
     ...getScheduleToolDefinitions(),
-    ...getFrameToolDefinitions(),
-    ...getAutoScheduleToolDefinitions(),
     ...getConvertToolDefinitions(),
     ...getSearchToolDefinitions(),
     ...getProfileToolDefinitions(),
@@ -40,8 +36,8 @@ describe('MCP Tool Definitions', () => {
 
   // ---- Count ----
 
-  it('registers exactly 68 tools', () => {
-    expect(tools).toHaveLength(68)
+  it('registers exactly 57 tools', () => {
+    expect(tools).toHaveLength(57)
   })
 
   // ---- Per-domain counts ----
@@ -72,14 +68,6 @@ describe('MCP Tool Definitions', () => {
 
   it('registers 5 schedule tools', () => {
     expect(getScheduleToolDefinitions()).toHaveLength(5)
-  })
-
-  it('registers 6 frame tools', () => {
-    expect(getFrameToolDefinitions()).toHaveLength(6)
-  })
-
-  it('registers 5 auto-schedule tools', () => {
-    expect(getAutoScheduleToolDefinitions()).toHaveLength(5)
   })
 
   it('registers 1 convert tool', () => {
@@ -204,30 +192,6 @@ describe('MCP Tool Definitions', () => {
     it('accepts flexibility and visibility', () => {
       expect(tool.inputSchema.properties).toHaveProperty('flexibility')
       expect(tool.inputSchema.properties).toHaveProperty('visibility')
-    })
-  })
-
-  describe('auto_schedule_run', () => {
-    const tool = tools.find((t) => t.name === 'auto_schedule_run')!
-
-    it('exists', () => {
-      expect(tool).toBeDefined()
-    })
-
-    it('accepts confirm boolean', () => {
-      expect(tool.inputSchema.properties).toHaveProperty('confirm')
-      const confirm = tool.inputSchema.properties.confirm as Record<string, unknown>
-      expect(confirm.type).toBe('boolean')
-    })
-
-    it('accepts window_days number', () => {
-      expect(tool.inputSchema.properties).toHaveProperty('window_days')
-      const windowDays = tool.inputSchema.properties.window_days as Record<string, unknown>
-      expect(windowDays.type).toBe('number')
-    })
-
-    it('has no required fields (all optional)', () => {
-      expect(tool.inputSchema.required).toBeUndefined()
     })
   })
 
@@ -379,11 +343,6 @@ describe('MCP Tool Definitions', () => {
     'get_booking_link', 'book_slot', 'list_bookings', 'get_availability',
     // Schedules (5)
     'list_schedules', 'get_schedule', 'create_schedule', 'update_schedule', 'delete_schedule',
-    // Frames (6)
-    'list_frames', 'create_frame', 'update_frame', 'delete_frame', 'toggle_frame', 'skip_frame_day',
-    // Auto-Schedule (5)
-    'auto_schedule_run', 'auto_schedule_preview', 'auto_schedule_unschedule',
-    'auto_schedule_status', 'classify_task',
     // Convert (1)
     'convert_item',
     // Search (1)
@@ -404,7 +363,7 @@ describe('MCP Tool Definitions', () => {
     }
   })
 
-  it('expected tool list is exactly 68', () => {
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(68)
+  it('expected tool list is exactly 57', () => {
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(57)
   })
 })

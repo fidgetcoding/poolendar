@@ -4,6 +4,5 @@ export interface Tag {
   name: string
   color: string
   prefix: string | null
-  priority_rank: number
   created_at: string
 }

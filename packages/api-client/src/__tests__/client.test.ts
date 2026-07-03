@@ -262,24 +262,6 @@ describe('PoolendarClient (api-client package)', () => {
       expect(body.scheduled_end).toBe('2026-06-15T10:00:00Z')
     })
 
-    // Auto-schedule
-    it('autoScheduleRun sends confirm flag', async () => {
-      globalThis.fetch = mockFetch({ placements: [] })
-      await client.autoScheduleRun({ confirm: false, window_days: 14 })
-      const [, opts] = lastCall()
-      const body = JSON.parse(opts.body)
-      expect(body.confirm).toBe(false)
-      expect(body.window_days).toBe(14)
-    })
-
-    it('autoScheduleRun defaults to confirm:true', async () => {
-      globalThis.fetch = mockFetch({ placements: [] })
-      await client.autoScheduleRun()
-      const [, opts] = lastCall()
-      const body = JSON.parse(opts.body)
-      expect(body.confirm).toBe(true)
-    })
-
     // Search
     it('search encodes query parameter', async () => {
       globalThis.fetch = mockFetch([])
@@ -335,11 +317,6 @@ describe('PoolendarClient (api-client package)', () => {
       'updateBookingLink', 'deleteBookingLink',
       'listBookings', 'bookSlot', 'getAvailability',
       'listSchedules', 'getSchedule', 'createSchedule', 'updateSchedule', 'deleteSchedule',
-      'listFrames', 'getFrame', 'createFrame', 'updateFrame', 'deleteFrame',
-      'toggleFrame', 'reorderFrames', 'skipFrameDay',
-      'autoScheduleRun', 'autoSchedulePreview', 'autoScheduleUnschedule',
-      'autoScheduleStatus', 'autoScheduleSettings', 'updateAutoScheduleSettings',
-      'classifyTask',
       'convert', 'search',
       'getProfile', 'updateProfile',
       'deleteAccount',

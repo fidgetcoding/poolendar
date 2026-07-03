@@ -32,7 +32,6 @@ function makeTag(overrides: Partial<Tag> = {}): Tag {
     name: 'Work',
     color: '#3b82f6',
     prefix: null,
-    priority_rank: 1,
     created_at: now,
     ...overrides,
   }
@@ -57,8 +56,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     visibility: 'busy',
     privacy: 'private',
     flexibility: 'flexible',
-    frame_id: null,
-    auto_scheduled: false,
     status: 'backlog',
     board: 'current',
     is_split: false,

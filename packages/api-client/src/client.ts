@@ -11,10 +11,6 @@ import type {
   ApiKey,
   PaginatedResponse,
   SearchResult,
-  Frame,
-  AutoSchedulePlacement,
-  AutoScheduleStatus,
-  TaskClassification,
 } from '@poolendar/types'
 
 export interface ClientConfig {
@@ -140,41 +136,6 @@ export class PoolendarClient {
   async createSchedule(data: Partial<Schedule>) { return this.request<Schedule>('/api/schedules', { method: 'POST', body: JSON.stringify(data) }) }
   async updateSchedule(id: string, data: Partial<Schedule>) { return this.request<Schedule>(`/api/schedules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
   async deleteSchedule(id: string) { return this.request<void>(`/api/schedules/${id}`, { method: 'DELETE' }) }
-
-  // Frames
-  async listFrames() { return this.request<Frame[]>('/api/frames') }
-  async getFrame(id: string) { return this.request<Frame>(`/api/frames/${id}`) }
-  async createFrame(data: Partial<Frame>) { return this.request<Frame>('/api/frames', { method: 'POST', body: JSON.stringify(data) }) }
-  async updateFrame(id: string, data: Partial<Frame>) { return this.request<Frame>(`/api/frames/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
-  async deleteFrame(id: string) { return this.request<void>(`/api/frames/${id}`, { method: 'DELETE' }) }
-  async toggleFrame(id: string) { return this.request<Frame>(`/api/frames/${id}/toggle`, { method: 'POST' }) }
-  async reorderFrames(order: string[]) { return this.request<Frame[]>('/api/frames/reorder', { method: 'POST', body: JSON.stringify({ order }) }) }
-  async skipFrameDay(id: string, date: string, active: boolean = false) {
-    return this.request<Frame>(`/api/frames/${id}/override`, { method: 'POST', body: JSON.stringify({ date, active }) })
-  }
-
-  // Auto-Schedule
-  async autoScheduleRun(opts?: { confirm?: boolean; window_days?: number }) {
-    return this.request<{ placements: AutoSchedulePlacement[] }>('/api/auto-schedule/run', { method: 'POST', body: JSON.stringify(opts ?? { confirm: true }) })
-  }
-  async autoSchedulePreview(windowDays?: number) {
-    return this.request<{ placements: AutoSchedulePlacement[] }>('/api/auto-schedule/preview', { method: 'POST', body: JSON.stringify({ window_days: windowDays }) })
-  }
-  async autoScheduleUnschedule() {
-    return this.request<{ unscheduled_count: number }>('/api/auto-schedule/unschedule', { method: 'POST' })
-  }
-  async autoScheduleStatus() {
-    return this.request<AutoScheduleStatus>('/api/auto-schedule/status')
-  }
-  async autoScheduleSettings() {
-    return this.request<{ enabled: boolean; ai_classification: boolean; scoring_weights: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until: string | null }>('/api/auto-schedule/settings')
-  }
-  async updateAutoScheduleSettings(data: { enabled?: boolean; ai_classification?: boolean; scoring_weights?: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until?: string | null }) {
-    return this.request<{ enabled: boolean; ai_classification: boolean; scoring_weights: { urgency: number; deadline: number; tag_priority: number; staleness: number }; paused_until: string | null }>('/api/auto-schedule/settings', { method: 'PATCH', body: JSON.stringify(data) })
-  }
-  async classifyTask(taskId: string) {
-    return this.request<TaskClassification>('/api/auto-schedule/classify', { method: 'POST', body: JSON.stringify({ task_id: taskId }) })
-  }
 
   // Undo
   async undo() { return this.request<any>('/api/undo', { method: 'POST' }) }

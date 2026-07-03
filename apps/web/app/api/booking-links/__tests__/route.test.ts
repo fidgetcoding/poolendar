@@ -88,8 +88,12 @@ vi.mock('@supabase/ssr', () => ({
   createServerClient: vi.fn((..._args: any[]) => serviceClientFactory()),
 }))
 
+// Both the sync (rateLimit) and async (rateLimitAsync) limiters are stubbed to
+// always allow — the availability/book routes gate on rateLimitAsync, and these
+// tests exercise validation/404/409 paths, not the limiter itself.
 vi.mock('@/lib/rate-limit', () => ({
   rateLimit: vi.fn(() => true),
+  rateLimitAsync: vi.fn(async () => true),
 }))
 
 vi.mock('@/lib/google/calendar', () => ({

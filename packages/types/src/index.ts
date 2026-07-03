@@ -30,16 +30,6 @@ export type { Tag } from './tag'
 export type { ApiKey } from './api-key'
 export type { Schedule } from './schedule'
 export type {
-  Frame,
-  FrameTimeBlock,
-  FrameKeyword,
-  FrameCorrection,
-  AutoScheduleStatus,
-  AutoSchedulePlacement,
-  TaskClassification,
-  AutoScheduleWeights,
-} from './frame'
-export type {
   ConvertRequest,
   ConvertDirection,
   SearchResult,

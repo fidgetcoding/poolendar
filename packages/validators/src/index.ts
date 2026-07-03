@@ -26,13 +26,5 @@ export {
   createTagSchema,
   updateTagSchema,
 } from './tag'
-export {
-  createFrameSchema,
-  updateFrameSchema,
-  frameOverrideSchema,
-  autoScheduleRunSchema,
-  classifyTaskSchema,
-  autoScheduleWeightsSchema,
-} from './frame'
 export { convertSchema } from './convert'
 export { searchSchema } from './search'

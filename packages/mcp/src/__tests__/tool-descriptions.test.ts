@@ -7,8 +7,6 @@ import {
   getTagToolDefinitions,
   getBookingToolDefinitions,
   getScheduleToolDefinitions,
-  getFrameToolDefinitions,
-  getAutoScheduleToolDefinitions,
   getConvertToolDefinitions,
   getSearchToolDefinitions,
   getProfileToolDefinitions,
@@ -25,8 +23,6 @@ function getAllToolDefinitions(): ToolDefinition[] {
     ...getTagToolDefinitions(),
     ...getBookingToolDefinitions(),
     ...getScheduleToolDefinitions(),
-    ...getFrameToolDefinitions(),
-    ...getAutoScheduleToolDefinitions(),
     ...getConvertToolDefinitions(),
     ...getSearchToolDefinitions(),
     ...getProfileToolDefinitions(),
@@ -52,7 +48,7 @@ describe('Tool Descriptions', () => {
     expect(
       shortDescriptions.length,
       `Too many short descriptions: ${shortDescriptions.map((t) => t.name).join(', ')}`
-    ).toBeLessThanOrEqual(10) // Allow up to 10 terse descriptions out of 68
+    ).toBeLessThanOrEqual(10) // Allow up to 10 terse descriptions out of 57
   })
 
   describe('create_task description (PRODUCT.md #82)', () => {
@@ -74,22 +70,6 @@ describe('Tool Descriptions', () => {
       // The description should make it clear that scheduled_start + scheduled_end
       // puts the task DIRECTLY on the calendar grid (not just the kanban board)
       expect(tool.description).toMatch(/directly.*calendar|calendar.*directly/i)
-    })
-  })
-
-  describe('auto_schedule_run description', () => {
-    const tool = tools.find((t) => t.name === 'auto_schedule_run')!
-
-    it('mentions scoring', () => {
-      expect(tool.description.toLowerCase()).toMatch(/scor(e|ing)/)
-    })
-
-    it('mentions frame placement', () => {
-      expect(tool.description.toLowerCase()).toContain('frame')
-    })
-
-    it('mentions priority', () => {
-      expect(tool.description.toLowerCase()).toContain('priority')
     })
   })
 
@@ -170,18 +150,6 @@ describe('Tool Descriptions', () => {
       const tool = bookingTools.find((t) => t.name === 'get_availability')!
       const desc = tool.description.toLowerCase()
       expect(desc).toContain('available')
-    })
-  })
-
-  describe('frame tool descriptions', () => {
-    it('create_frame mentions auto-scheduling', () => {
-      const tool = tools.find((t) => t.name === 'create_frame')!
-      expect(tool.description.toLowerCase()).toContain('auto-schedul')
-    })
-
-    it('toggle_frame mentions activate/deactivate', () => {
-      const tool = tools.find((t) => t.name === 'toggle_frame')!
-      expect(tool.description.toLowerCase()).toMatch(/activat|deactivat|active|inactive/)
     })
   })
 

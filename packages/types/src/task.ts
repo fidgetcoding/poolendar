@@ -30,8 +30,6 @@ export interface Task {
   visibility: 'busy' | 'free'
   privacy: 'private' | 'public'
   flexibility: 'flexible' | 'not_flexible'
-  frame_id: string | null
-  auto_scheduled: boolean
   status: TaskStatus
   board: TaskBoard
   is_split: boolean

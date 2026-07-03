@@ -2,7 +2,7 @@
 
 ## Context
 
-Greenfield Next.js 14+ web app. No existing codebase — all architecture decisions are new. The product spec (`PRODUCT.md`) defines 90+ behavioral invariants across calendar grid, tasks with subtasks, routines, Google Calendar sync, booking pages, kanban board, and a 68-tool MCP server. The core thesis: `create_task` with `scheduled_start`/`scheduled_end` goes directly on the calendar grid (#22).
+Greenfield Next.js 14+ web app. No existing codebase — all architecture decisions are new. The product spec (`PRODUCT.md`) defines 90+ behavioral invariants across calendar grid, tasks with subtasks, routines, Google Calendar sync, booking pages, kanban board, and a 47-tool MCP server. The core thesis: `create_task` with `scheduled_start`/`scheduled_end` goes directly on the calendar grid (#22).
 
 **Stack (confirmed in product spec):**
 - **Next.js 14+** (App Router) — framework
@@ -37,7 +37,7 @@ Greenfield Next.js 14+ web app. No existing codebase — all architecture decisi
 
 ### 1. Supabase Schema
 
-17 tables. All tables have RLS policies restricting access to `auth.uid() = user_id`. Booking-related tables have additional public-read/insert policies for external bookers.
+12 tables. All tables have RLS policies restricting access to `auth.uid() = user_id`. Booking-related tables have additional public-read/insert policies for external bookers.
 
 ```sql
 -- Extends Supabase auth.users
@@ -129,8 +129,6 @@ create table tasks (
   visibility text default 'busy',
   privacy text default 'private',
   flexibility text default 'flexible',
-  frame_id uuid references frames(id) on delete set null,  -- assigned frame (#104)
-  auto_scheduled boolean default false,  -- true if placed by auto-scheduler
   status text default 'backlog',         -- backlog|in_progress|check|done
   board text default 'current',          -- current|future
   is_split boolean default false,
@@ -158,7 +156,6 @@ create table tags (
   name text not null,
   color text not null,
   prefix text,
-  priority_rank int default 5,           -- 1-10, used in auto-schedule scoring (#103)
   created_at timestamptz default now(),
   unique(user_id, name)
 );
@@ -245,7 +242,7 @@ create table api_keys (
   created_at timestamptz default now()
 );
 
--- Booking availability schedules (for booking links)
+-- Placeholder for future auto-scheduling
 create table schedules (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
@@ -253,45 +250,6 @@ create table schedules (
   time_blocks jsonb not null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
-);
-
--- Auto-scheduling time containers (separate from booking schedules)
-create table frames (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references profiles(id) on delete cascade,
-  name text not null,                      -- "Deep Work", "Admin", "Creative"
-  description text,                        -- feeds AI classification context
-  color text default '#6366f1',
-  time_blocks jsonb not null default '[]', -- [{day: 1, start: "09:00", end: "11:00"}]
-  recurrence_rule text,                    -- RRULE; null = every week
-  is_active boolean default true,
-  day_overrides jsonb default '{}',        -- {"2026-06-13": false} per-day skip
-  priority_rank int default 0,             -- lower = fills first
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- AI classification keyword ruleset (per-user, evolves via corrections)
-create table frame_keywords (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references profiles(id) on delete cascade,
-  frame_id uuid references frames(id) on delete cascade,
-  keyword text not null,                   -- "debug", "invoice", "brainstorm"
-  weight float8 default 1.0,              -- confidence weight, boosted by corrections
-  source text default 'seed',             -- seed | correction | llm
-  created_at timestamptz default now(),
-  unique(user_id, frame_id, keyword)
-);
-
--- Tracks user corrections for AI learning (#109)
-create table frame_corrections (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references profiles(id) on delete cascade,
-  task_id uuid references tasks(id) on delete set null,
-  from_frame_id uuid references frames(id) on delete set null,
-  to_frame_id uuid references frames(id) on delete set null,
-  task_title text not null,                -- snapshot for keyword extraction
-  created_at timestamptz default now()
 );
 ```
 
@@ -303,10 +261,6 @@ create table frame_corrections (
 - `routine_instances(routine_id, date)` — daily instance lookups
 - `bookings(booking_link_id, start_time, end_time)` — availability checks
 - `events(google_event_id)` — sync lookups
-- `frames(user_id, is_active)` — active frame queries
-- `frame_keywords(user_id, keyword)` — classification lookups
-- `tasks(user_id, auto_scheduled)` — auto-scheduled task queries
-- `tasks(user_id, frame_id)` — frame assignment lookups
 
 ### 2. App Structure
 
@@ -317,48 +271,16 @@ app/
 │   └── callback/route.ts           # Supabase Auth callback
 ├── (app)/
 │   ├── layout.tsx                  # SidebarRibbon + top bar
-│   └── page.tsx                    # Calendar grid (default); settings + booking are modals
+│   ├── page.tsx                    # Calendar grid (default)
+│   ├── settings/page.tsx           # Settings modal
+│   └── booking/page.tsx            # Booking management panel
 ├── (booking)/                      # External booking pages (public)
 │   └── [slug]/page.tsx
 ├── api/
-│   ├── api-keys/route.ts
-│   ├── api-keys/[id]/route.ts
-│   ├── auth/delete-account/route.ts
-│   ├── auto-schedule/classify/route.ts
-│   ├── auto-schedule/preview/route.ts
-│   ├── auto-schedule/run/route.ts
-│   ├── auto-schedule/settings/route.ts
-│   ├── auto-schedule/status/route.ts
-│   ├── auto-schedule/unschedule/route.ts
-│   ├── booking-links/route.ts
-│   ├── booking-links/[id]/route.ts
-│   ├── booking-links/[id]/availability/route.ts
-│   ├── booking-links/[id]/book/route.ts
-│   ├── booking-links/[id]/bookings/route.ts
-│   ├── convert/route.ts
+│   ├── calendars/route.ts
 │   ├── events/route.ts
 │   ├── events/[id]/route.ts
 │   ├── events/[id]/rsvp/route.ts
-│   ├── frames/route.ts
-│   ├── frames/[id]/route.ts
-│   ├── frames/[id]/toggle/route.ts
-│   ├── frames/[id]/override/route.ts
-│   ├── frames/reorder/route.ts
-│   ├── google/callback/route.ts
-│   ├── google/connect/route.ts
-│   ├── google/disconnect/[id]/route.ts
-│   ├── google/sync/route.ts
-│   ├── google/webhook/route.ts
-│   ├── profile/route.ts
-│   ├── routines/route.ts
-│   ├── routines/[id]/route.ts
-│   ├── routines/[id]/instances/route.ts
-│   ├── routines/[id]/instances/[date]/route.ts
-│   ├── schedules/route.ts
-│   ├── schedules/[id]/route.ts
-│   ├── search/route.ts
-│   ├── tags/route.ts
-│   ├── tags/[id]/route.ts
 │   ├── tasks/route.ts
 │   ├── tasks/[id]/route.ts
 │   ├── tasks/[id]/complete/route.ts
@@ -369,127 +291,101 @@ app/
 │   ├── tasks/[id]/subtasks/route.ts
 │   ├── tasks/[id]/subtasks/[subtaskId]/route.ts
 │   ├── tasks/[id]/subtasks/reorder/route.ts
-│   └── undo/route.ts
+│   ├── tasks/reflow/route.ts
+│   ├── routines/route.ts
+│   ├── routines/[id]/route.ts
+│   ├── routines/[id]/instances/[date]/complete/route.ts
+│   ├── routines/[id]/instances/[date]/skip/route.ts
+│   ├── booking/links/route.ts
+│   ├── booking/links/[id]/route.ts
+│   ├── booking/links/[id]/bookings/route.ts
+│   ├── booking/availability/[slug]/route.ts
+│   ├── booking/book/[slug]/route.ts
+│   ├── tags/route.ts
+│   ├── tags/[id]/route.ts
+│   ├── schedules/route.ts
+│   ├── schedules/[id]/route.ts
+│   ├── convert/route.ts
+│   ├── search/route.ts
+│   ├── auth/api-keys/route.ts
+│   └── webhooks/
+│       └── google-calendar/route.ts
 ├── middleware.ts                    # Subdomain routing + API key auth
 components/
 ├── calendar/
 │   ├── CalendarGrid.tsx            # Main grid container
-│   ├── CalendarHeader.tsx          # Top bar with nav + view mode
-│   ├── CalendarItem.tsx            # Unified event/task/routine block
-│   ├── CalendarDragOverlay.tsx     # Drag preview overlay
+│   ├── TimeGrid.tsx                # Vertical time slots
 │   ├── DayColumn.tsx               # Single day column
-│   ├── TimeColumn.tsx              # Vertical time labels
-│   ├── MonthGrid.tsx               # Month view grid
+│   ├── AllDayRow.tsx               # All-day events row
+│   ├── EventBlock.tsx              # Solid-fill event rendering
+│   ├── TaskBlock.tsx               # Dashed-border task rendering
+│   ├── RoutineBlock.tsx            # Dashed-border + repeat icon
 │   ├── PreviewPopover.tsx          # Single-click popover (#15)
-│   ├── NewItemPopover.tsx          # Creation popover for clicks/drags
 │   ├── ItemEditForm.tsx            # Tabbed edit form (#13)
-│   ├── SubtaskList.tsx             # Inline subtask editor (#23c)
-│   ├── RecurrenceBuilder.tsx       # Recurrence rule editor
-│   ├── RecurrenceEditDialog.tsx    # "This/All/Future" dialog (#28a)
-│   ├── ReminderEditor.tsx          # Reminder time picker
+│   ├── SubtaskChecklist.tsx        # Inline subtask editor (#23c)
+│   ├── ViewModeSelector.tsx        # Day/Week/Month/Custom dropdown (#4)
 │   └── ContextMenu.tsx             # Right-click menus (#15a, #15b)
 ├── sidebar/
 │   ├── SidebarRibbon.tsx           # Narrow icon rail (#72)
 │   ├── TaskPanel.tsx               # Task list with groups (#28-36)
-│   ├── RoutinesPanel.tsx           # Routine list (#31)
-│   ├── CalendarList.tsx            # Calendar account toggles
-│   ├── MiniCalendar.tsx            # Compact date picker
-│   └── UpcomingList.tsx            # Upcoming items view
+│   ├── RoutinePanel.tsx            # Routine list (#31)
+│   └── BookingPanel.tsx            # Booking link management (#52)
 ├── kanban/
-│   ├── KanbanBoard.tsx             # Full kanban view (#36-43)
-│   ├── KanbanColumn.tsx            # Single column
-│   ├── KanbanFilters.tsx           # Project/tag filter bar
-│   ├── TaskCard.tsx                # Task card with subtask progress
-│   ├── TaskCardCompact.tsx         # Compact card variant
-│   ├── QuickAddTask.tsx            # Inline task creation
-│   ├── DragPreview.tsx             # Drag overlay for kanban
-│   ├── EmptyColumn.tsx             # Empty state
-│   └── BoardSwitcher.tsx           # Current/Future switch (#38)
+│   ├── Board.tsx                   # Full kanban view (#36-43)
+│   ├── Column.tsx                  # Single column
+│   ├── Tile.tsx                    # Task card with subtask progress
+│   └── BoardToggle.tsx             # Current/Future switch (#38)
 ├── command-bar/
-│   ├── CommandBar.tsx              # ⌘K overlay (#72a-72c)
-│   └── CommandItem.tsx             # Individual command result
+│   └── CommandBar.tsx              # ⌘K overlay (#72a-72c)
 ├── booking-external/
-│   ├── BookingCalendar.tsx         # Date selection calendar (#57b)
-│   ├── BookingForm.tsx             # Booker confirmation form
-│   ├── BookingConfirmation.tsx     # Post-booking confirmation
-│   └── TimeSlotGrid.tsx            # Available time slots
+│   ├── BookingPage.tsx             # External booking UI (#57b)
+│   ├── DatePicker.tsx
+│   └── SlotPicker.tsx
 ├── settings/
 │   ├── SettingsModal.tsx
-│   ├── GeneralTab.tsx
-│   ├── CalendarsTab.tsx
-│   ├── TagsTab.tsx
-│   ├── FramesTab.tsx               # Frame CRUD, priority reorder, AI toggle, scoring weights
-│   ├── AvailabilityTab.tsx
-│   ├── BookingPagesTab.tsx
-│   ├── AccountTab.tsx
-│   ├── ApiKeyManager.tsx
-│   ├── ShortcutsTab.tsx
-│   ├── NotificationsTab.tsx
-│   ├── TelegramTab.tsx
-│   ├── VideoConferencingTab.tsx
-│   └── SettingsSection.tsx         # Reusable settings section layout
-├── mobile/
-│   └── BottomTabBar.tsx            # Mobile bottom navigation (#72h)
-├── ErrorBoundary.tsx
-└── ui/                             # shadcn/ui primitives (Button, Input, etc.)
+│   ├── GeneralSettings.tsx
+│   ├── CalendarSettings.tsx
+│   ├── TagSettings.tsx
+│   ├── BookingSettings.tsx
+│   └── ProfileSettings.tsx
+└── ui/                             # shadcn/ui primitives
 lib/
-├── auth/
-│   ├── api-key.ts                  # API key validation + hashing
-│   └── helpers.ts                  # Auth utility functions
 ├── supabase/
 │   ├── client.ts                   # Browser client
 │   ├── server.ts                   # Server client
 │   └── middleware.ts               # Auth middleware helper
 ├── google/
-│   ├── oauth.ts                    # OAuth flow for multiple accounts
+│   ├── auth.ts                     # OAuth flow for multiple accounts
 │   ├── calendar.ts                 # Calendar API wrapper
 │   └── sync.ts                     # Push/pull sync logic
 ├── hooks/
-│   ├── use-events.ts               # TanStack Query hooks
-│   ├── use-tasks.ts
-│   ├── use-subtasks.ts
-│   ├── use-routines.ts
-│   ├── use-booking.ts
-│   ├── use-tags.ts
-│   ├── use-frames.ts               # Frame CRUD + toggle + skip
-│   ├── use-auto-schedule.ts        # Run/preview/unschedule/status
-│   ├── use-undo.ts                 # Command pattern undo stack
-│   ├── use-keyboard.ts             # Keyboard shortcut bindings
-│   ├── use-search.ts               # Full-text search hook
-│   └── use-profile.ts              # Profile + settings hook
+│   ├── useEvents.ts                # TanStack Query hooks
+│   ├── useTasks.ts
+│   ├── useSubtasks.ts
+│   ├── useRoutines.ts
+│   ├── useBooking.ts
+│   ├── useTags.ts
+│   ├── useCalendars.ts
+│   ├── useUndoRedo.ts              # Command pattern undo stack
+│   ├── useKeyboardShortcuts.ts
+│   ├── useOfflineQueue.ts          # IndexedDB mutation queue
+│   └── useDragCalendar.ts          # Calendar grid drag logic
 ├── stores/
 │   ├── calendar-store.ts           # View mode, selected date, selected item
-│   ├── kanban-store.ts             # Kanban board state + filters
-│   └── ui-store.ts                 # Panels, modals, drag state
-├── offline/
-│   ├── db.ts                       # Dexie IndexedDB schema + mirror tables
-│   ├── sync.ts                     # Offline mutation queue + reconnect drain
-│   └── use-online.ts               # Online/offline status hook
-├── auto-schedule/
-│   ├── index.ts                    # Public API exports
-│   ├── pipeline.ts                 # Orchestrates score → classify → place
-│   ├── scorer.ts                   # Priority scoring function (#103)
-│   ├── placer.ts                   # Placement algorithm (#104-106)
-│   ├── classifier.ts              # Layer 1 keyword matcher (#108)
-│   ├── classifier-llm.ts          # Layer 2 LLM fallback (#108)
-│   └── learner.ts                 # Correction-based learning (#109)
-├── rate-limit.ts                   # Sliding window rate limiter
-└── utils.ts                        # Shared utility functions
-```
-
-**Validators** are in the `packages/validators/` workspace package (shared by web app + MCP server):
-
-```
-packages/validators/src/
-├── event.ts                        # Zod schemas
-├── task.ts
-├── routine.ts
-├── booking.ts
-├── frame.ts
-├── tag.ts
-├── convert.ts
-├── search.ts
-└── index.ts
+│   ├── panel-store.ts              # Which panels are open
+│   └── undo-store.ts               # Operation stack (50 deep)
+├── utils/
+│   ├── availability.ts             # Booking availability calculation
+│   ├── recurrence.ts               # rrule wrapper
+│   ├── fractional-index.ts         # Kanban ordering
+│   ├── time.ts                     # Grid position ↔ time conversion
+│   └── color.ts                    # Calendar color utilities
+└── validators/
+    ├── event.ts                    # Zod schemas
+    ├── task.ts
+    ├── routine.ts
+    ├── booking.ts
+    └── tag.ts
 ```
 
 ### 3. Google Calendar Sync
@@ -629,63 +525,6 @@ if (subdomain !== 'app' && subdomain !== 'www' && subdomain !== 'poolendar') {
 
 **Triggers:** Vercel Cron runs every minute, queries for items with reminders due in the next minute. Fires notifications per channel per user preference (#63).
 
-### 12. Auto-Scheduling Engine
-
-**Scoring function** (`lib/auto-schedule/scorer.ts`):
-```
-score(task) = w_urgency * normalize(importance) +
-              w_deadline * max(0, 1 - days_until_due/14) +
-              w_tag * normalize(max_tag_priority) +
-              w_staleness * min(1, days_since_creation/30)
-```
-Default weights: `{urgency: 0.35, deadline: 0.30, tag_priority: 0.20, staleness: 0.15}`. Stored in `profiles.settings.auto_schedule_weights`.
-
-**Placement algorithm** (`lib/auto-schedule/placer.ts`):
-1. Fetch all unscheduled tasks (`scheduled_start IS NULL AND status NOT IN ('done')`)
-2. Score each task, sort descending
-3. Fetch all active frames for the scheduling window (default: next 7 days)
-4. For each frame instance (a specific day + time block): subtract existing events and already-placed tasks to compute available capacity
-5. For each task (highest score first):
-   a. If AI classification is on: determine best-fit frame via `classify(task)` → `frame_id`
-   b. Find the earliest frame instance with enough capacity (≥ task time estimate)
-   c. If frame_id match found: place there. If not: fall back to any frame with capacity, highest priority_rank first
-   d. Set `tasks.scheduled_start`, `scheduled_end`, `frame_id`, `auto_scheduled = true`
-6. Return the placement list (task_id → frame_instance → start/end)
-
-**Scheduling window:** Configurable, default 7 days forward. The engine doesn't schedule further than `task.due_date` for tasks with deadlines.
-
-**Trigger points:**
-- Manual: user clicks "Run Auto-Schedule" in Settings > Frames, or calls API
-- On task creation: if auto-scheduling is enabled and the new task has no scheduled times, score + place immediately
-- On frame change: if a frame's time blocks or active status changes, re-run for affected frame instances
-- Periodic: optional Vercel Cron (every 6 hours) re-balances if enabled in settings
-
-**Undo integration:** Auto-schedule placements batch into a single undo operation. `⌘Z` after an auto-schedule run unschedules all tasks from that run.
-
-### 13. AI Frame Classification
-
-**Layer 1 — Keyword matcher** (`lib/auto-schedule/classifier.ts`):
-1. Tokenize task title + notes (lowercase, strip punctuation, split on whitespace)
-2. Match tokens against `frame_keywords` table for the user
-3. Sum weighted matches per frame: `frame_score = Σ(keyword.weight)`
-4. If top frame score ≥ threshold (default 0.6) AND is ≥ 1.5x the second-highest score: return frame_id with confidence
-5. Below threshold → fall through to Layer 2
-
-**Layer 2 — LLM fallback** (`lib/auto-schedule/classifier-llm.ts`):
-1. Build prompt: "Given these frames: [{name, description}...], classify this task: {title, notes}. Return the frame name that best fits."
-2. Call Anthropic API with `claude-haiku-4-5-20251001` model (cheapest, fastest)
-3. Parse response → match to frame name → return frame_id
-4. Cache result in `frame_keywords` with `source: 'llm'` so future identical tokens skip the LLM
-
-**Correction learning** (`lib/auto-schedule/learner.ts`):
-1. On manual task move between frames: insert `frame_corrections` row
-2. Extract keywords from the moved task's title
-3. Query: how many corrections have moved tasks with keyword X from frame A to frame B?
-4. If count ≥ 3 (configurable): update or insert `frame_keywords` row mapping keyword X → frame B with `source: 'correction'`, boost weight to 1.5
-5. Downweight or delete the old keyword → frame A mapping
-
-**Cost control:** Layer 2 fires only for ambiguous tasks. Expected ratio: ~80% Layer 1, ~20% Layer 2. For a user with 50 unscheduled tasks, that's ~10 Haiku calls ≈ $0.01. A daily cap (default: 100 LLM calls/day) prevents runaway costs.
-
 ### 11. MCP Server
 
 Separate npm package: `poolendar-mcp`.
@@ -696,19 +535,16 @@ poolendar-mcp/
 │   ├── index.ts              # Server entry, tool registration
 │   ├── client.ts             # REST API wrapper (fetch + API key auth)
 │   └── tools/
-│       ├── auto-schedule.ts  # run/preview/unschedule/status/classify
-│       ├── booking.ts        # links CRUD + list_bookings + book_slot + get_availability
-│       ├── bulk.ts           # bulk_create/update/delete tasks
-│       ├── convert.ts        # type conversion (6 directions via convert_item)
-│       ├── events.ts         # CRUD + rsvp + get_event
-│       ├── frames.ts         # frame CRUD + toggle + skip
-│       ├── profile.ts        # get/update profile + API key management
-│       ├── routines.ts       # CRUD + get_routine + instance complete/skip
-│       ├── schedules.ts      # booking schedule CRUD + get_schedule
+│       ├── calendars.ts      # list_calendars
+│       ├── events.ts         # CRUD + rsvp
+│       ├── tasks.ts          # CRUD + close/reopen/move/split/schedule
+│       ├── subtasks.ts       # CRUD + complete
+│       ├── routines.ts       # CRUD + instance complete/skip
+│       ├── booking.ts        # links CRUD + list_bookings
+│       ├── tags.ts           # CRUD
+│       ├── convert.ts        # type conversion (6 directions)
 │       ├── search.ts         # full-text search
-│       ├── subtasks.ts       # CRUD + complete + reorder
-│       ├── tags.ts           # CRUD + get_tag
-│       └── tasks.ts          # CRUD + close/reopen/move/split/schedule + get_task
+│       └── schedules.ts      # placeholder CRUD
 ├── package.json
 └── tsconfig.json
 ```
@@ -717,7 +553,7 @@ Installation: `claude mcp add poolendar -- npx poolendar-mcp`
 
 Config reads `POOLENDAR_API_KEY` from environment. Each tool has a rich `description` field optimized for LLM tool selection — e.g., `create_task` description explicitly states that `scheduled_start`/`scheduled_end` place the task on the calendar grid (#82).
 
-Tool count: 12 Morgen-parity + 56 Poolendar-exclusive = 68 total (including 11 frame/auto-schedule tools, 3 bulk operations, 5 profile/API-key management, and 8 get-by-ID tools).
+Tool count: 15 Morgen-parity + 32 Poolendar-exclusive = 47 total.
 
 ## Diagrams
 
@@ -784,10 +620,6 @@ Tests map directly to PRODUCT.md invariant numbers.
 | Split operation | #23d, #23g | Subtask-to-task promotion, tag/project inheritance, N-chunk generation |
 | Type conversion | #13 | All 6 directions, side effect flags, subtask discard warning (#80 line) |
 | Undo command pattern | #72d-72f | Stack push/pop, max depth 50, redo after undo |
-| Auto-schedule scorer | #103 | Weighted sum, edge cases (no due date, no tags, zero staleness), weight normalization |
-| Auto-schedule placer | #104-106 | Frame capacity calculation, time estimate fitting, subtask distribution, earliest_start/due_date bounds |
-| Keyword classifier | #108 | Token matching, confidence threshold, score ratio gate, seed from frame descriptions |
-| Correction learner | #109 | Correction count threshold, keyword weight update, old mapping downweight |
 
 ### Integration Tests (Vitest + Supabase Local)
 
@@ -807,11 +639,6 @@ Every API endpoint in PRODUCT.md #75 gets at minimum:
 | Book a slot → verify availability updates for overlapping links | #56 |
 | Booking with `requires_approval` → verify status is `pending` | #53 |
 | Create task via API without times → verify NOT in calendar date range query | #20, #22 |
-| Create frame → auto-schedule run → verify tasks placed in correct frame instances | #94-106 |
-| Auto-schedule with AI classification → verify keyword match places task in named frame | #107-108 |
-| Move auto-scheduled task between frames → verify correction recorded → re-classify after 3 corrections | #109 |
-| Toggle auto-scheduling off with "unschedule all" → verify tasks return to unscheduled | #102 |
-| Auto-schedule with split subtasks → verify children distributed across frame instances | #106 |
 
 ### E2E Tests (Playwright)
 
@@ -843,7 +670,7 @@ Every API endpoint in PRODUCT.md #75 gets at minimum:
 The build splits into 4 phases. Streams within a phase are independent and can run as parallel agents.
 
 **Phase 1 — Foundation (sequential, ~1 session)**
-- Supabase project + schema migration (all 17 tables + RLS + indexes)
+- Supabase project + schema migration (all 12 tables + RLS + indexes)
 - Next.js scaffold: App Router, Tailwind, shadcn/ui, TanStack Query, Zustand
 - Supabase Auth + API key system
 - Middleware (subdomain routing + API key auth + rate limiting)
@@ -866,7 +693,7 @@ The build splits into 4 phases. Streams within a phase are independent and can r
 | G: Polish | Command bar, keyboard shortcuts, undo/redo, offline (IndexedDB + service worker), notifications (all 4 channels), Settings UI | #62-72j, #66-70, #71 |
 
 **Phase 4 — MCP Server (1 stream, after Phase 2-3 APIs exist)**
-- REST client wrapper, all 68 tool definitions, npm package, README
+- REST client wrapper, all 47 tool definitions, npm package, README
 
 ## Risks and Mitigations
 
@@ -880,8 +707,7 @@ The build splits into 4 phases. Streams within a phase are independent and can r
 
 ## Follow-ups
 
+- **Auto-scheduling algorithm** — deep design conversation deferred per PRODUCT.md. `schedules` table and API stubs are in place.
 - **Native mobile app** — React Native or Capacitor wrapper once web app stabilizes (#72g notes this as future goal).
 - **PWA manifest** — Service worker is implemented for offline; adding `manifest.json` + install prompt is minimal follow-up.
 - **iCal/CalDAV** — Explicitly non-goal for v1 but schema supports it (events table is provider-agnostic).
-- **Routine hot zones** — Auto-reslotting skipped routines into preferred windows. Routines and frames are independent for v1.
-- **Advanced AI classification** — Fine-tuned embeddings model for frame matching instead of keyword+LLM. Deferred until correction data volume justifies it.

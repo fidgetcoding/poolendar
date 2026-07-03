@@ -29,7 +29,6 @@ function makeTag(overrides: Partial<Tag> = {}): Tag {
     name: 'Work',
     color: '#3b82f6',
     prefix: null,
-    priority_rank: 1,
     created_at: now,
     ...overrides,
   }
@@ -104,7 +103,6 @@ describe('useCreateTag', () => {
         name: 'Urgent',
         color: '#ef4444',
         prefix: null,
-        priority_rank: 0,
       })
     })
 
@@ -128,7 +126,6 @@ describe('useCreateTag', () => {
         name: 'Urgent',
         color: '#ef4444',
         prefix: null,
-        priority_rank: 0,
       })
     })
 
@@ -151,7 +148,6 @@ describe('useCreateTag', () => {
         name: 'New',
         color: '#000',
         prefix: null,
-        priority_rank: 2,
       })
     })
 

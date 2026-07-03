@@ -448,94 +448,6 @@ describe('PoolendarClient', () => {
       expect(url).toBe(`${BASE_URL}/api/schedules`)
     })
 
-    // Frames
-    it('listFrames -> GET /api/frames', async () => {
-      globalThis.fetch = mockFetchResponse([])
-      await client.listFrames()
-      const [url] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/frames`)
-    })
-
-    it('toggleFrame -> POST /api/frames/:id/toggle', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.toggleFrame('f-1')
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/frames/f-1/toggle`)
-      expect(opts.method).toBe('POST')
-    })
-
-    it('reorderFrames -> POST /api/frames/reorder', async () => {
-      globalThis.fetch = mockFetchResponse([])
-      await client.reorderFrames(['f-2', 'f-1'])
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/frames/reorder`)
-      expect(opts.method).toBe('POST')
-    })
-
-    it('skipFrameDay -> POST /api/frames/:id/override', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.skipFrameDay('f-1', '2026-07-04', false)
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/frames/f-1/override`)
-      expect(opts.method).toBe('POST')
-      expect(JSON.parse(opts.body)).toEqual({ date: '2026-07-04', active: false })
-    })
-
-    // Auto-Schedule
-    it('autoScheduleRun -> POST /api/auto-schedule/run', async () => {
-      globalThis.fetch = mockFetchResponse({ placements: [] })
-      await client.autoScheduleRun({ confirm: true })
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/run`)
-      expect(opts.method).toBe('POST')
-    })
-
-    it('autoSchedulePreview -> POST /api/auto-schedule/preview', async () => {
-      globalThis.fetch = mockFetchResponse({ placements: [] })
-      await client.autoSchedulePreview(7)
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/preview`)
-      expect(opts.method).toBe('POST')
-    })
-
-    it('autoScheduleUnschedule -> POST /api/auto-schedule/unschedule', async () => {
-      globalThis.fetch = mockFetchResponse({ unscheduled_count: 5 })
-      await client.autoScheduleUnschedule()
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/unschedule`)
-      expect(opts.method).toBe('POST')
-    })
-
-    it('autoScheduleStatus -> GET /api/auto-schedule/status', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.autoScheduleStatus()
-      const [url] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/status`)
-    })
-
-    it('autoScheduleSettings -> GET /api/auto-schedule/settings', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.autoScheduleSettings()
-      const [url] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/settings`)
-    })
-
-    it('updateAutoScheduleSettings -> PATCH /api/auto-schedule/settings', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.updateAutoScheduleSettings({ enabled: true })
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/settings`)
-      expect(opts.method).toBe('PATCH')
-    })
-
-    it('classifyTask -> POST /api/auto-schedule/classify', async () => {
-      globalThis.fetch = mockFetchResponse({})
-      await client.classifyTask('t-1')
-      const [url, opts] = lastFetchCall()
-      expect(url).toBe(`${BASE_URL}/api/auto-schedule/classify`)
-      expect(opts.method).toBe('POST')
-    })
-
     // Convert
     it('convert -> POST /api/convert', async () => {
       globalThis.fetch = mockFetchResponse({})
@@ -657,13 +569,6 @@ describe('PoolendarClient', () => {
       'listBookings', 'bookSlot', 'getAvailability',
       // Schedules
       'listSchedules', 'getSchedule', 'createSchedule', 'updateSchedule', 'deleteSchedule',
-      // Frames
-      'listFrames', 'getFrame', 'createFrame', 'updateFrame', 'deleteFrame',
-      'toggleFrame', 'reorderFrames', 'skipFrameDay',
-      // Auto-Schedule
-      'autoScheduleRun', 'autoSchedulePreview', 'autoScheduleUnschedule',
-      'autoScheduleStatus', 'autoScheduleSettings', 'updateAutoScheduleSettings',
-      'classifyTask',
       // Convert
       'convert',
       // Search

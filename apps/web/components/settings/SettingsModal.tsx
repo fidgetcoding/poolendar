@@ -9,7 +9,6 @@ import {
   Send,
   Settings,
   Tag,
-  Layers,
   Clock,
   ExternalLink,
   User,
@@ -23,7 +22,6 @@ import { AccountTab } from './AccountTab'
 import { ApiKeyManager } from './ApiKeyManager'
 import { ShortcutsTab } from './ShortcutsTab'
 import { TagsTab } from './TagsTab'
-import { FramesTab } from './FramesTab'
 import { AvailabilityTab } from './AvailabilityTab'
 import { BookingPagesTab } from './BookingPagesTab'
 import { VideoConferencingTab } from './VideoConferencingTab'
@@ -44,7 +42,6 @@ type SettingsTab =
   | 'general'
   | 'notifications'
   | 'tags'
-  | 'frames'
   | 'availability'
   | 'booking'
   | 'profile'
@@ -128,7 +125,6 @@ const SETTINGS_SECTIONS: NavSection[] = [
       { key: 'general', label: 'General', icon: Settings },
       { key: 'notifications', label: 'Notifications', icon: Settings },
       { key: 'tags', label: 'Tags', icon: Tag },
-      { key: 'frames', label: 'Frames', icon: Layers },
       { key: 'availability', label: 'Availability', icon: Clock },
       { key: 'booking', label: 'Booking Pages', icon: ExternalLink },
     ],
@@ -429,7 +425,6 @@ export function SettingsModal({
                 />
               )}
               {activeTab === 'tags' && <TagsTab />}
-              {activeTab === 'frames' && <FramesTab />}
               {activeTab === 'availability' && <AvailabilityTab />}
               {activeTab === 'booking' && <BookingPagesTab />}
               {activeTab === 'profile' && (

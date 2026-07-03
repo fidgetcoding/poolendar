@@ -5,8 +5,6 @@ export { getRoutineToolDefinitions, getRoutineToolHandlers } from './routines.js
 export { getTagToolDefinitions, getTagToolHandlers } from './tags.js'
 export { getBookingToolDefinitions, getBookingToolHandlers } from './booking.js'
 export { getScheduleToolDefinitions, getScheduleToolHandlers } from './schedules.js'
-export { getFrameToolDefinitions, getFrameToolHandlers } from './frames.js'
-export { getAutoScheduleToolDefinitions, getAutoScheduleToolHandlers } from './auto-schedule.js'
 export { getConvertToolDefinitions, getConvertToolHandlers } from './convert.js'
 export { getSearchToolDefinitions, getSearchToolHandlers } from './search.js'
 export { getProfileToolDefinitions, getProfileToolHandlers } from './profile.js'
