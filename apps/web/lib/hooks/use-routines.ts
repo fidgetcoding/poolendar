@@ -21,14 +21,14 @@ export const routineKeys = {
 // Input types
 // ---------------------------------------------------------------------------
 
-type CreateRoutineInput = Omit<Routine, 'id' | 'user_id' | 'created_at' | 'updated_at'>
+export type CreateRoutineInput = Omit<Routine, 'id' | 'user_id' | 'created_at' | 'updated_at'>
 
-type UpdateRoutineInput = {
+export type UpdateRoutineInput = {
   id: string
   data: Partial<Omit<Routine, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
 }
 
-type UpsertInstanceInput = {
+export type UpsertInstanceInput = {
   routine_id: string
   date: string
 }

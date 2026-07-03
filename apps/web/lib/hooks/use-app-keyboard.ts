@@ -1,150 +1,208 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useCalendarStore } from '@/lib/stores/calendar-store'
 import { useUIStore } from '@/lib/stores/ui-store'
 
-interface AppKeyboardHandlers {
+// ---------------------------------------------------------------------------
+// Global keyboard shortcut listener (#71). The store-only shortcuts (views,
+// navigation, zoom, panels) are handled inline via getState(); anything that
+// needs the shared undo engine, the command bar, or app chrome is injected as a
+// handler. Behavior here is the runtime companion to SHORTCUT_DEFINITIONS in
+// use-keyboard.ts — the ShortcutsTab and the `.` overlay render from that same
+// source so the list can never drift from what actually fires.
+// ---------------------------------------------------------------------------
+
+export interface AppKeyboardHandlers {
   undo: () => void
   redo: () => void
   toggleCommandBar: () => void
-  openCommandBar: () => void
+  openCommandSearch: () => void
+  closeCommandBar: () => void
   openSettings: () => void
+  refreshCalendars: () => void
+  showShortcuts: () => void
+  deleteSelected: () => void
+  splitSelected: () => void
 }
 
-/**
- * Global keyboard shortcut listener (#71). Extracted from the app layout to keep
- * that file under the 500-line cap. Store actions are read via getState() so the
- * handler stays dependency-light.
- */
-export function useAppKeyboard({
-  undo,
-  redo,
-  toggleCommandBar,
-  openCommandBar,
-  openSettings,
-}: AppKeyboardHandlers) {
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      const calendarStore = useCalendarStore.getState()
-      const uiStore = useUIStore.getState()
+const SEQUENCE_WINDOW_MS = 800
 
-      const target = e.target as HTMLElement
-      const isInput =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
+export function useAppKeyboard(handlers: AppKeyboardHandlers) {
+  // Keep the latest handlers without re-registering the listener each render.
+  const handlersRef = useRef(handlers)
+  handlersRef.current = handlers
 
-      // Command bar: Cmd+K / Ctrl+K (always active)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+  // Tracks an in-flight "N then T" chord.
+  const pendingNRef = useRef<number>(0)
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const h = handlersRef.current
+    const calendarStore = useCalendarStore.getState()
+    const uiStore = useUIStore.getState()
+
+    const target = e.target as HTMLElement
+    const isInput =
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable
+
+    const meta = e.metaKey || e.ctrlKey
+
+    // --- Global (fire even inside inputs) ---
+
+    // Command bar: ⌘K
+    if (meta && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      h.toggleCommandBar()
+      return
+    }
+
+    // Search: ⌘F
+    if (meta && e.key.toLowerCase() === 'f' && !e.shiftKey) {
+      e.preventDefault()
+      h.openCommandSearch()
+      return
+    }
+
+    // Undo / redo: ⌘Z / ⌘⇧Z
+    if (meta && e.key.toLowerCase() === 'z') {
+      e.preventDefault()
+      if (e.shiftKey) h.redo()
+      else h.undo()
+      return
+    }
+
+    if (e.key === 'Escape') {
+      // Esc closes the command bar and any open preview (creation/discard, #71).
+      uiStore.closePreviewPopover()
+      h.closeCommandBar()
+      // Don't return — allow the edit form's own Esc handler to run too.
+    }
+
+    if (isInput) return
+
+    // --- Alt combos ---
+    if (e.altKey) {
+      const k = e.key.toLowerCase()
+      if (k === 'a') {
         e.preventDefault()
-        toggleCommandBar()
+        uiStore.toggleTaskPanel()
         return
       }
-
-      // Undo: Cmd+Z / Ctrl+Z
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
-        if (!isInput) {
-          e.preventDefault()
-          undo()
-        }
+      if (k === 's') {
+        e.preventDefault()
+        uiStore.toggleBookingPanel()
         return
       }
-
-      // Redo: Cmd+Shift+Z / Ctrl+Shift+Z
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
-        if (!isInput) {
-          e.preventDefault()
-          redo()
-        }
+      if (e.key >= '1' && e.key <= '9') {
+        e.preventDefault()
+        calendarStore.setCustomDays(parseInt(e.key, 10))
+        calendarStore.setView('custom')
         return
       }
+      return
+    }
 
-      if (isInput) return
+    if (meta) return
 
-      // Alt combos
-      if (e.altKey) {
-        switch (e.key) {
-          case 'a':
-          case 'A':
-            e.preventDefault()
-            uiStore.toggleTaskPanel()
-            return
-          case 's':
-          case 'S':
-            e.preventDefault()
-            uiStore.toggleBookingPanel()
-            return
-          default:
-            if (e.key >= '1' && e.key <= '9') {
-              e.preventDefault()
-              calendarStore.setCustomDays(parseInt(e.key, 10))
-              calendarStore.setView('custom')
-            }
-            return
+    // "N then T" chord → new task (#71).
+    const now = Date.now()
+    if (e.key.toLowerCase() === 'n') {
+      pendingNRef.current = now
+      return
+    }
+    const nRecent = now - pendingNRef.current < SEQUENCE_WINDOW_MS
+    pendingNRef.current = 0
+
+    switch (e.key) {
+      case 'T':
+      case 't':
+        if (nRecent) uiStore.openEditForm(null, 'task')
+        else calendarStore.goToToday()
+        break
+      case 'D':
+      case 'd':
+        calendarStore.setView('day')
+        break
+      case 'W':
+      case 'w':
+        calendarStore.setView('week')
+        break
+      case 'M':
+      case 'm':
+        calendarStore.setView('month')
+        break
+      case 'X':
+      case 'x':
+        calendarStore.setView('2weeks')
+        break
+      case 'P':
+      case 'p':
+        e.preventDefault()
+        h.openSettings()
+        break
+      case 'R':
+      case 'r':
+        if (e.shiftKey) {
+          // ⇧R reschedule — open the selected item's form (focused on its time).
+          const { selectedItemId, selectedItemType } = calendarStore
+          if (selectedItemId && selectedItemType) {
+            uiStore.openEditForm(selectedItemId, selectedItemType)
+          }
+        } else {
+          h.refreshCalendars()
         }
+        break
+      case 'S':
+      case 's':
+        if (e.shiftKey) h.splitSelected()
+        break
+      case 'C':
+      case 'c':
+        uiStore.openEditForm(null, 'event')
+        break
+      case 'E':
+      case 'e': {
+        const { selectedItemId, selectedItemType } = calendarStore
+        if (selectedItemId && selectedItemType) {
+          uiStore.openEditForm(selectedItemId, selectedItemType)
+        }
+        break
       }
-
-      switch (e.key) {
-        case 'T':
-        case 't':
-          calendarStore.goToToday()
-          break
-        case 'D':
-        case 'd':
-          calendarStore.setView('day')
-          break
-        case 'W':
-        case 'w':
-          calendarStore.setView('week')
-          break
-        case 'M':
-        case 'm':
-          calendarStore.setView('month')
-          break
-        case 'X':
-        case 'x':
-          calendarStore.setView('2weeks')
-          break
-        case 'P':
-        case 'p':
-          e.preventDefault()
-          openSettings()
-          break
-        case 'R':
-        case 'r':
-          // Refresh calendars — integration point
-          break
-        case 'C':
-        case 'c':
-          uiStore.openEditForm(null, 'event')
-          break
-        case 'ArrowLeft':
-          calendarStore.goToPrevPeriod()
-          break
-        case 'ArrowRight':
-          calendarStore.goToNextPeriod()
-          break
-        case '.':
-          openCommandBar()
-          break
-        case '[':
-          calendarStore.zoomOut()
-          break
-        case ']':
-          calendarStore.zoomIn()
-          break
-        case ' ':
-          e.preventDefault()
-          uiStore.toggleSidebar()
-          break
-        default:
-          break
-      }
-    },
-    [undo, redo, toggleCommandBar, openCommandBar, openSettings]
-  )
+      case 'Delete':
+      case 'Backspace':
+        h.deleteSelected()
+        break
+      case 'ArrowLeft':
+        calendarStore.goToPrevPeriod()
+        break
+      case 'ArrowRight':
+        calendarStore.goToNextPeriod()
+        break
+      case '.':
+        h.showShortcuts()
+        break
+      case '?':
+      case '/':
+        e.preventDefault()
+        h.showShortcuts()
+        break
+      case '[':
+        calendarStore.zoomOut()
+        break
+      case ']':
+        calendarStore.zoomIn()
+        break
+      case ' ':
+        e.preventDefault()
+        uiStore.toggleSidebar()
+        break
+      default:
+        break
+    }
+  }, [])
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown)

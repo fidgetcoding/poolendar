@@ -9,9 +9,18 @@ interface PreviewPopover {
   position: { x: number; y: number } | null
 }
 
+/**
+ * The panels are mutually exclusive — only one occupies the left drawer /
+ * main area at a time. `activePanel` is the single source of truth; the
+ * `taskPanelOpen` / `bookingPanelOpen` booleans are read-only mirrors kept in
+ * sync here (never set independently) so existing consumers keep working.
+ */
+export type PanelId = 'tasks' | 'calendar' | 'booking' | 'schedules'
+
 interface UIState {
   // Panel states
   sidebarOpen: boolean
+  activePanel: PanelId
   taskPanelOpen: boolean
   bookingPanelOpen: boolean
   settingsModalOpen: boolean
@@ -56,6 +65,7 @@ interface UIState {
   // Actions
   toggleSidebar: () => void
   setSidebarOpen: (open: boolean) => void
+  setActivePanel: (panel: PanelId) => void
   toggleTaskPanel: () => void
   setTaskPanelOpen: (open: boolean) => void
   toggleBookingPanel: () => void
@@ -102,9 +112,19 @@ const initialContextMenu = {
   position: null as { x: number; y: number } | null,
 }
 
+/** Derive the mirror booleans from the authoritative activePanel. */
+function panelState(panel: PanelId) {
+  return {
+    activePanel: panel,
+    taskPanelOpen: panel === 'tasks',
+    bookingPanelOpen: panel === 'booking',
+  }
+}
+
 export const useUIStore = create<UIState>()((set) => ({
   // Panel states
   sidebarOpen: true,
+  activePanel: 'calendar',
   taskPanelOpen: false,
   bookingPanelOpen: false,
   settingsModalOpen: false,
@@ -135,15 +155,27 @@ export const useUIStore = create<UIState>()((set) => ({
 
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-  toggleTaskPanel: () =>
-    set((state) => ({ taskPanelOpen: !state.taskPanelOpen })),
+  setActivePanel: (panel) => set(panelState(panel)),
 
-  setTaskPanelOpen: (open) => set({ taskPanelOpen: open }),
+  toggleTaskPanel: () =>
+    set((state) =>
+      panelState(state.activePanel === 'tasks' ? 'calendar' : 'tasks')
+    ),
+
+  setTaskPanelOpen: (open) =>
+    set((state) =>
+      panelState(open ? 'tasks' : state.activePanel === 'tasks' ? 'calendar' : state.activePanel)
+    ),
 
   toggleBookingPanel: () =>
-    set((state) => ({ bookingPanelOpen: !state.bookingPanelOpen })),
+    set((state) =>
+      panelState(state.activePanel === 'booking' ? 'calendar' : 'booking')
+    ),
 
-  setBookingPanelOpen: (open) => set({ bookingPanelOpen: open }),
+  setBookingPanelOpen: (open) =>
+    set((state) =>
+      panelState(open ? 'booking' : state.activePanel === 'booking' ? 'calendar' : state.activePanel)
+    ),
 
   setSettingsModalOpen: (open) => set({ settingsModalOpen: open }),
 

@@ -20,9 +20,9 @@ export const eventKeys = {
 // Input types
 // ---------------------------------------------------------------------------
 
-type CreateEventInput = Omit<CalendarEvent, 'id' | 'created_at' | 'updated_at'>
+export type CreateEventInput = Omit<CalendarEvent, 'id' | 'created_at' | 'updated_at'>
 
-type UpdateEventInput = {
+export type UpdateEventInput = {
   id: string
   data: Partial<Omit<CalendarEvent, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
 }

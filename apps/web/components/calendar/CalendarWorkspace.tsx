@@ -12,27 +12,7 @@ import type {
 import { useCalendarStore } from '@/lib/stores/calendar-store'
 import { useUIStore } from '@/lib/stores/ui-store'
 import { useCalendarContextActions } from '@/lib/hooks/use-calendar-context-actions'
-import {
-  useCreateEvent,
-  useUpdateEvent,
-  useDeleteEvent,
-} from '@/lib/hooks/use-events'
-import {
-  useCreateTask,
-  useUpdateTask,
-  useDeleteTask,
-  useCompleteTask,
-  useMoveTask,
-  useScheduleTask,
-} from '@/lib/hooks/use-tasks'
-import {
-  useCreateRoutine,
-  useUpdateRoutine,
-  useDeleteRoutine,
-  useCompleteRoutineInstance,
-  useResetRoutineInstance,
-  useSkipRoutineInstance,
-} from '@/lib/hooks/use-routines'
+import { useUndoable } from '@/lib/hooks/use-undoable'
 import { CalendarGrid } from './CalendarGrid'
 import { PreviewPopover } from './PreviewPopover'
 import { ContextMenu } from './ContextMenu'
@@ -70,21 +50,7 @@ export function CalendarWorkspace({
   const store = useCalendarStore()
   const { openEditForm } = useUIStore()
 
-  const createEvent = useCreateEvent()
-  const updateEvent = useUpdateEvent()
-  const deleteEvent = useDeleteEvent()
-  const createTask = useCreateTask()
-  const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
-  const completeTask = useCompleteTask()
-  const moveTask = useMoveTask()
-  const scheduleTask = useScheduleTask()
-  const createRoutine = useCreateRoutine()
-  const updateRoutine = useUpdateRoutine()
-  const deleteRoutine = useDeleteRoutine()
-  const completeRoutineInstance = useCompleteRoutineInstance()
-  const resetRoutineInstance = useResetRoutineInstance()
-  const skipRoutineInstance = useSkipRoutineInstance()
+  const undoable = useUndoable()
 
   const ctx = useCalendarContextActions({
     events,
@@ -119,7 +85,7 @@ export function CalendarWorkspace({
     over: Partial<Routine> & { title: string }
   ) {
     if (!userId) return
-    createRoutine.mutate({
+    undoable.createRoutine({
       user_id: userId,
       calendar_id: over.calendar_id ?? defaultCalendarId,
       title: over.title,
@@ -132,7 +98,7 @@ export function CalendarWorkspace({
       visibility: over.visibility ?? 'busy',
       privacy: over.privacy ?? 'private',
       reminders: over.reminders ?? [],
-    } as unknown as Parameters<typeof createRoutine.mutate>[0])
+    })
   }
 
   // ---- grid interactions (#14) ----
@@ -143,40 +109,56 @@ export function CalendarWorkspace({
     newEnd: Date
   ) {
     if (itemType === 'event') {
-      updateEvent.mutate({
-        id: itemId,
-        data: {
+      const prev = events.find((e) => e.id === itemId)
+      if (!prev) return
+      undoable.updateEvent(
+        itemId,
+        {
           start_time: newStart.toISOString(),
           end_time: newEnd.toISOString(),
           sync_status: 'pending_push',
         },
-      })
+        prev
+      )
     } else if (itemType === 'task') {
-      scheduleTask.mutate({
-        id: itemId,
-        scheduled_start: newStart.toISOString(),
-        scheduled_end: newEnd.toISOString(),
-      })
+      const prev = tasks.find((t) => t.id === itemId)
+      if (!prev) return
+      undoable.scheduleTask(
+        itemId,
+        newStart.toISOString(),
+        newEnd.toISOString(),
+        prev
+      )
     } else {
       const { routineId } = parseRoutineItemId(itemId)
-      updateRoutine.mutate({
-        id: routineId,
-        data: { start_time: toTimeString(newStart), end_time: toTimeString(newEnd) },
-      })
+      const prev = routines.find((r) => r.id === routineId)
+      if (!prev) return
+      undoable.updateRoutine(
+        routineId,
+        { start_time: toTimeString(newStart), end_time: toTimeString(newEnd) },
+        prev
+      )
     }
   }
 
   function handleResize(itemId: string, itemType: CalendarItemType, newEnd: Date) {
     if (itemType === 'event') {
-      updateEvent.mutate({
-        id: itemId,
-        data: { end_time: newEnd.toISOString(), sync_status: 'pending_push' },
-      })
+      const prev = events.find((e) => e.id === itemId)
+      if (!prev) return
+      undoable.updateEvent(
+        itemId,
+        { end_time: newEnd.toISOString(), sync_status: 'pending_push' },
+        prev
+      )
     } else if (itemType === 'task') {
-      updateTask.mutate({ id: itemId, data: { scheduled_end: newEnd.toISOString() } })
+      const prev = tasks.find((t) => t.id === itemId)
+      if (!prev) return
+      undoable.updateTask(itemId, { scheduled_end: newEnd.toISOString() }, prev)
     } else {
       const { routineId } = parseRoutineItemId(itemId)
-      updateRoutine.mutate({ id: routineId, data: { end_time: toTimeString(newEnd) } })
+      const prev = routines.find((r) => r.id === routineId)
+      if (!prev) return
+      undoable.updateRoutine(routineId, { end_time: toTimeString(newEnd) }, prev)
     }
   }
 
@@ -199,7 +181,7 @@ export function CalendarWorkspace({
         })
         return
       }
-      createEvent.mutate({
+      undoable.createEvent({
         user_id: userId,
         calendar_id: defaultCalendarId,
         google_event_id: null,
@@ -223,7 +205,7 @@ export function CalendarWorkspace({
         etag: null,
       })
     } else if (type === 'task') {
-      createTask.mutate({
+      undoable.createTask({
         user_id: userId,
         calendar_id: defaultCalendarId,
         parent_id: null,
@@ -284,6 +266,10 @@ export function CalendarWorkspace({
 
   // ---- single click: preview (#15) ----
   function handleItemClick(item: CalendarItemData, anchorRect?: DOMRect) {
+    // Track the clicked item as the keyboard selection (E / ⇧R / ⇧S / Delete).
+    const selectionId =
+      item.type === 'routine' ? parseRoutineItemId(item.id).routineId : item.id
+    store.selectItem(selectionId, item.type)
     const calId =
       item.event?.calendar_id ?? item.task?.calendar_id ?? item.routine?.calendar_id ?? null
     const cal = calId ? calendars.find((c) => c.id === calId) : undefined
@@ -309,9 +295,9 @@ export function CalendarWorkspace({
   function handleTaskCheckbox(item: CalendarItemData) {
     if (!item.task) return
     if (item.task.status === 'done') {
-      moveTask.mutate({ id: item.task.id, status: 'backlog' })
+      undoable.reopenTask(item.task)
     } else {
-      completeTask.mutate(item.task.id)
+      undoable.completeTask(item.task)
     }
   }
 
@@ -320,17 +306,21 @@ export function CalendarWorkspace({
     const date = routineDateOf(item)
     if (item.routineInstanceStatus === 'completed') {
       // Toggling off a completed instance reverts it to pending.
-      resetRoutineInstance.mutate({ routine_id: item.routine.id, date })
+      undoable.resetRoutineInstance(item.routine.id, date)
     } else {
-      completeRoutineInstance.mutate({ routine_id: item.routine.id, date })
+      undoable.completeRoutineInstance(item.routine.id, date)
     }
   }
 
   // ---- preview actions ----
   function deleteBySource(source: CalendarItemData) {
-    if (source.type === 'event') deleteEvent.mutate(source.id)
-    else if (source.type === 'task') deleteTask.mutate(source.id)
-    else deleteRoutine.mutate(parseRoutineItemId(source.id).routineId)
+    if (source.type === 'event' && source.event) {
+      undoable.deleteEvent(source.event)
+    } else if (source.type === 'task' && source.task) {
+      undoable.deleteTask(source.task)
+    } else if (source.routine) {
+      undoable.deleteRoutine(source.routine)
+    }
   }
 
   return (
@@ -382,21 +372,15 @@ export function CalendarWorkspace({
           }}
           onComplete={() => {
             const src = preview.source
-            if (src.type === 'task' && src.task) completeTask.mutate(src.task.id)
+            if (src.type === 'task' && src.task) undoable.completeTask(src.task)
             else if (src.type === 'routine' && src.routine)
-              completeRoutineInstance.mutate({
-                routine_id: src.routine.id,
-                date: routineDateOf(src),
-              })
+              undoable.completeRoutineInstance(src.routine.id, routineDateOf(src))
             setPreview(null)
           }}
           onSkip={() => {
             const src = preview.source
             if (src.routine)
-              skipRoutineInstance.mutate({
-                routine_id: src.routine.id,
-                date: routineDateOf(src),
-              })
+              undoable.skipRoutineInstance(src.routine.id, routineDateOf(src))
             setPreview(null)
           }}
         />

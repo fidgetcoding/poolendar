@@ -20,10 +20,14 @@ interface QuickAddTaskProps {
     importance: TaskImportance
     due_date: string | null
   }) => void
+  /** Render already open (used by the column-header "+" entry point, #42). */
+  startOpen?: boolean
+  /** Called when the form closes — lets a controlled parent hide it. */
+  onClose?: () => void
 }
 
-export function QuickAddTask({ status, onCreateTask }: QuickAddTaskProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export function QuickAddTask({ status, onCreateTask, startOpen = false, onClose }: QuickAddTaskProps) {
+  const [isOpen, setIsOpen] = useState(startOpen)
   const [title, setTitle] = useState('')
   const [importance, setImportance] = useState<TaskImportance>('normal')
   const [dueDate, setDueDate] = useState('')
@@ -50,6 +54,7 @@ export function QuickAddTask({ status, onCreateTask }: QuickAddTaskProps) {
     setImportance('normal')
     setDueDate('')
     setIsOpen(false)
+    onClose?.()
   }
 
   function handleCancel() {
@@ -57,6 +62,7 @@ export function QuickAddTask({ status, onCreateTask }: QuickAddTaskProps) {
     setImportance('normal')
     setDueDate('')
     setIsOpen(false)
+    onClose?.()
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

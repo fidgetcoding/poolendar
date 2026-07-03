@@ -156,6 +156,16 @@ export const TaskCard = React.memo(function TaskCard({
           >
             {task.title}
           </p>
+
+          {/* Description preview (#40) — truncated to two lines */}
+          {task.notes && (
+            <p
+              className="mt-0.5 text-xs leading-snug line-clamp-2"
+              style={{ color: 'var(--muted)' }}
+            >
+              {task.notes}
+            </p>
+          )}
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import type { Task, TaskStatus, TaskImportance } from '@poolendar/types'
 import { TaskCard } from './TaskCard'
 import { TaskCardCompact } from './TaskCardCompact'
@@ -52,6 +52,7 @@ export function KanbanColumn({
   onCreateTask,
 }: KanbanColumnProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [headerAddOpen, setHeaderAddOpen] = useState(false)
 
   const { setNodeRef, isOver } = useDroppable({
     id: `column-${status}`,
@@ -113,11 +114,27 @@ export function KanbanColumn({
           </span>
         </button>
 
-        {/* Column accent bar */}
-        <div
-          className="w-8 h-0.5 rounded-full"
-          style={{ backgroundColor: accentColor }}
-        />
+        <div className="flex items-center gap-2">
+          {/* Column-header add (#42) — creates a task pre-assigned to this column */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsCollapsed(false)
+              setHeaderAddOpen(true)
+            }}
+            aria-label={`Add task to ${COLUMN_TITLES[status]}`}
+            title={`Add task to ${COLUMN_TITLES[status]}`}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)] transition-colors"
+          >
+            <Plus size={14} />
+          </button>
+
+          {/* Column accent bar */}
+          <div
+            className="w-8 h-0.5 rounded-full"
+            style={{ backgroundColor: accentColor }}
+          />
+        </div>
       </div>
 
       {/* Collapse/expand content */}
@@ -127,6 +144,17 @@ export function KanbanColumn({
           className="flex-1 px-2 pb-3 overflow-y-auto"
           style={{ maxHeight: 'calc(100vh - 200px)' }}
         >
+          {headerAddOpen && (
+            <div className="mb-2">
+              <QuickAddTask
+                status={status}
+                onCreateTask={onCreateTask}
+                startOpen
+                onClose={() => setHeaderAddOpen(false)}
+              />
+            </div>
+          )}
+
           <SortableContext
             items={taskIds}
             strategy={verticalListSortingStrategy}

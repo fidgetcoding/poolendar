@@ -28,14 +28,14 @@ type TaskListFilters = {
   scheduled_before?: string
 }
 
-type CreateTaskInput = Omit<
+export type CreateTaskInput = Omit<
   Task,
   'id' | 'created_at' | 'updated_at' | 'subtasks' | 'tags' | 'children'
 > & {
   tag_ids?: string[]
 }
 
-type UpdateTaskInput = {
+export type UpdateTaskInput = {
   id: string
   data: Partial<
     Omit<Task, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'subtasks' | 'tags' | 'children'>
@@ -44,20 +44,20 @@ type UpdateTaskInput = {
   }
 }
 
-type MoveTaskInput = {
+export type MoveTaskInput = {
   id: string
   status: TaskStatus
   board?: TaskBoard
   position?: number
 }
 
-type ScheduleTaskInput = {
+export type ScheduleTaskInput = {
   id: string
   scheduled_start: string
   scheduled_end: string
 }
 
-type SplitTaskInput = {
+export type SplitTaskInput = {
   id: string
   chunks?: { title: string; time_estimate_minutes?: number }[]
 }

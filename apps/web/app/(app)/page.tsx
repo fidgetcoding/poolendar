@@ -10,7 +10,8 @@ import { EditFormHost } from '@/components/calendar/EditFormHost'
 import { getVisibleDays } from '@/components/calendar/grid-helpers'
 import { KanbanBoard } from '@/components/kanban'
 import { useEvents } from '@/lib/hooks/use-events'
-import { useTasks, useMoveTask, useCompleteTask, useCreateTask, useUpdateTask } from '@/lib/hooks/use-tasks'
+import { useTasks } from '@/lib/hooks/use-tasks'
+import { useUndoable } from '@/lib/hooks/use-undoable'
 import { useRoutines } from '@/lib/hooks/use-routines'
 import { useTags } from '@/lib/hooks/use-tags'
 import { useCalendars, useCalendarAccounts } from '@/lib/hooks/use-calendars'
@@ -70,31 +71,34 @@ export default function AppPage() {
   const userId = profile?.id ?? null
   const selfEmails = useMemo(() => accounts.map((a) => a.email), [accounts])
 
-  const moveTask = useMoveTask()
-  const completeTask = useCompleteTask()
-  const createTask = useCreateTask()
-  const updateTask = useUpdateTask()
+  const undoable = useUndoable()
 
   // ---- Kanban interactions ----
   const handleTaskMove = useCallback(
     (taskId: string, newStatus: TaskStatus, newPosition: number) => {
-      moveTask.mutate({ id: taskId, status: newStatus, position: newPosition })
+      const prev = tasks.find((t) => t.id === taskId)
+      if (!prev) return
+      undoable.moveTask({ id: taskId, status: newStatus, position: newPosition }, prev)
     },
-    [moveTask]
+    [undoable, tasks]
   )
 
   const handleTaskReorder = useCallback(
     (taskId: string, status: TaskStatus, newPosition: number) => {
-      moveTask.mutate({ id: taskId, status, position: newPosition })
+      const prev = tasks.find((t) => t.id === taskId)
+      if (!prev) return
+      undoable.reorderTask({ id: taskId, status, position: newPosition }, prev)
     },
-    [moveTask]
+    [undoable, tasks]
   )
 
   const handleTaskUpdate = useCallback(
     (taskId: string, updates: Partial<import('@poolendar/types').Task>) => {
-      updateTask.mutate({ id: taskId, data: updates })
+      const prev = tasks.find((t) => t.id === taskId)
+      if (!prev) return
+      undoable.updateTask(taskId, updates, prev)
     },
-    [updateTask]
+    [undoable, tasks]
   )
 
   const handleTaskCreate = useCallback(
@@ -105,9 +109,33 @@ export default function AppPage() {
       due_date: string | null
       board: TaskBoard
     }) => {
-      createTask.mutate(data as Parameters<typeof createTask.mutate>[0])
+      if (!userId) return
+      undoable.createTask({
+        user_id: userId,
+        calendar_id: null,
+        parent_id: null,
+        title: data.title,
+        notes: null,
+        importance: data.importance,
+        time_estimate_minutes: null,
+        earliest_start: null,
+        due_date: data.due_date,
+        due_date_recurrence: null,
+        scheduled_start: null,
+        scheduled_end: null,
+        location: null,
+        visibility: 'busy',
+        privacy: 'private',
+        flexibility: 'flexible',
+        status: data.status,
+        board: data.board,
+        is_split: false,
+        completed_at: null,
+        position: null,
+        reminders: [],
+      })
     },
-    [createTask]
+    [undoable, userId]
   )
 
   const { openEditForm } = useUIStore()
@@ -120,9 +148,12 @@ export default function AppPage() {
 
   const handleTaskComplete = useCallback(
     (taskId: string) => {
-      completeTask.mutate(taskId)
+      const prev = tasks.find((t) => t.id === taskId)
+      if (!prev) return
+      if (prev.status === 'done') undoable.reopenTask(prev)
+      else undoable.completeTask(prev)
     },
-    [completeTask]
+    [undoable, tasks]
   )
 
   const showKanban = taskPanelViewMode === 'board'

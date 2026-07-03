@@ -11,21 +11,7 @@ import type {
 } from '@poolendar/types'
 import { useUIStore } from '@/lib/stores/ui-store'
 import { useTask } from '@/lib/hooks/use-tasks'
-import {
-  useCreateEvent,
-  useUpdateEvent,
-  useDeleteEvent,
-} from '@/lib/hooks/use-events'
-import {
-  useCreateTask,
-  useUpdateTask,
-  useDeleteTask,
-} from '@/lib/hooks/use-tasks'
-import {
-  useCreateRoutine,
-  useUpdateRoutine,
-  useDeleteRoutine,
-} from '@/lib/hooks/use-routines'
+import { useUndoable } from '@/lib/hooks/use-undoable'
 import { ItemEditForm, type ItemEditFormInitialData } from './ItemEditForm'
 import type { RecurrenceEditScope } from './RecurrenceEditDialog'
 import { parseRoutineItemId } from './grid-helpers'
@@ -131,15 +117,7 @@ export function EditFormHost({
     closeEditForm,
   } = useUIStore()
 
-  const createEvent = useCreateEvent()
-  const updateEvent = useUpdateEvent()
-  const deleteEvent = useDeleteEvent()
-  const createTask = useCreateTask()
-  const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
-  const createRoutine = useCreateRoutine()
-  const updateRoutine = useUpdateRoutine()
-  const deleteRoutine = useDeleteRoutine()
+  const undoable = useUndoable()
 
   const isEdit = Boolean(editFormItemId)
   const isTaskEdit = isEdit && editFormItemType === 'task'
@@ -157,6 +135,7 @@ export function EditFormHost({
   let initialData: ItemEditFormInitialData | undefined
   let sourceEvent: CalendarEvent | undefined
   let sourceTask: Task | undefined
+  let sourceRoutine: Routine | undefined
 
   if (!isEdit) {
     initialData = (editFormInitialData ?? undefined) as
@@ -172,9 +151,9 @@ export function EditFormHost({
     if (!sourceTask || (isTaskEdit && !taskDetail.data)) return null
     initialData = taskInitialData(sourceTask)
   } else {
-    const routine = routines.find((r) => r.id === routineBaseId)
-    if (!routine) return null
-    initialData = routineInitialData(routine)
+    sourceRoutine = routines.find((r) => r.id === routineBaseId)
+    if (!sourceRoutine) return null
+    initialData = routineInitialData(sourceRoutine)
   }
 
   const attendeeCount = sourceEvent?.attendees?.length ?? 0
@@ -190,7 +169,7 @@ export function EditFormHost({
         window.alert('Connect a calendar before creating an event.')
         return
       }
-      createEvent.mutate({
+      undoable.createEvent({
         user_id: userId,
         calendar_id: calendarId,
         google_event_id: null,
@@ -214,7 +193,7 @@ export function EditFormHost({
         etag: null,
       })
     } else if (type === 'task') {
-      createTask.mutate({
+      undoable.createTask({
         user_id: userId,
         calendar_id: (data.calendar_id as string | null) ?? null,
         parent_id: null,
@@ -240,9 +219,7 @@ export function EditFormHost({
         tag_ids: (data.tags as string[]) ?? [],
       })
     } else {
-      // Routine — user_id is required by RLS but omitted from the hook's input
-      // type, so pass it through explicitly.
-      createRoutine.mutate({
+      undoable.createRoutine({
         user_id: userId,
         calendar_id: (data.calendar_id as string | null) ?? null,
         title: (data.title as string) ?? 'Untitled',
@@ -255,15 +232,16 @@ export function EditFormHost({
         visibility: (data.visibility as 'busy' | 'free') ?? 'busy',
         privacy: (data.privacy as 'private' | 'public') ?? 'private',
         reminders: (data.reminders as Routine['reminders']) ?? [],
-      } as unknown as Parameters<typeof createRoutine.mutate>[0])
+      })
     }
   }
 
   function updateItem(type: ItemType, id: string, data: Record<string, unknown>) {
     if (type === 'event') {
-      updateEvent.mutate({
+      if (!sourceEvent) return
+      undoable.updateEvent(
         id,
-        data: {
+        {
           title: data.title as string,
           notes: (data.notes as string | null) ?? null,
           location: (data.location as string | null) ?? null,
@@ -279,11 +257,13 @@ export function EditFormHost({
           reminders: (data.reminders as CalendarEvent['reminders']) ?? [],
           sync_status: 'pending_push',
         },
-      })
+        sourceEvent
+      )
     } else if (type === 'task') {
-      updateTask.mutate({
+      if (!sourceTask) return
+      undoable.updateTask(
         id,
-        data: {
+        {
           title: data.title as string,
           notes: (data.notes as string | null) ?? null,
           location: (data.location as string | null) ?? null,
@@ -299,11 +279,13 @@ export function EditFormHost({
           reminders: (data.reminders as Task['reminders']) ?? [],
           tag_ids: (data.tags as string[]) ?? [],
         },
-      })
+        sourceTask
+      )
     } else {
-      updateRoutine.mutate({
+      if (!sourceRoutine) return
+      undoable.updateRoutine(
         id,
-        data: {
+        {
           title: data.title as string,
           notes: (data.notes as string | null) ?? null,
           location: (data.location as string | null) ?? null,
@@ -314,7 +296,8 @@ export function EditFormHost({
           privacy: (data.privacy as 'private' | 'public') ?? 'private',
           reminders: (data.reminders as Routine['reminders']) ?? [],
         },
-      })
+        sourceRoutine
+      )
     }
   }
 
@@ -394,25 +377,19 @@ export function EditFormHost({
       closeEditForm()
       return
     }
-    if (editFormItemType === 'event') deleteEvent.mutate(editFormItemId!)
-    else if (editFormItemType === 'task') deleteTask.mutate(editFormItemId!)
-    else if (editFormItemType === 'routine' && routineBaseId)
-      deleteRoutine.mutate(routineBaseId)
+    if (editFormItemType === 'event' && sourceEvent) {
+      undoable.deleteEvent(sourceEvent)
+    } else if (editFormItemType === 'task' && sourceTask) {
+      undoable.deleteTask(sourceTask)
+    } else if (editFormItemType === 'routine' && sourceRoutine) {
+      undoable.deleteRoutine(sourceRoutine)
+    }
     closeEditForm()
   }
 
-  async function handleSplit() {
+  function handleSplit() {
     if (!isEdit || editFormItemType !== 'task' || !editFormItemId) return
-    const res = await fetch(`/api/tasks/${editFormItemId}/split`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    invalidateAll(queryClient)
-    if (!res.ok) {
-      window.alert('Could not split this task.')
-      return
-    }
+    undoable.splitTask(editFormItemId)
     closeEditForm()
   }
 

@@ -277,6 +277,24 @@ export function ItemEditForm({
     }
   }
 
+  // ⌘Enter saves the open form, Esc discards it (#71). A ref keeps the latest
+  // handleSave without re-registering the listener on every keystroke.
+  const saveRef = React.useRef(handleSave)
+  saveRef.current = handleSave
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        saveRef.current()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   function handleDeleteClick() {
     if (isRecurring) {
       setDeleteDialogOpen(true)

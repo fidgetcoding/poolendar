@@ -39,7 +39,7 @@ import type {
   Calendar as CalendarType,
 } from '@poolendar/types'
 
-type SettingsTab =
+export type SettingsTab =
   | 'shortcuts'
   | 'video'
   | 'telegram'
@@ -57,6 +57,8 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void
   profile: Profile | null
   onProfileUpdate: (profile: Profile) => void
+  /** When set, the modal opens focused on this tab (deep-link from command bar / panels). */
+  initialTab?: SettingsTab
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -158,14 +160,25 @@ export function SettingsModal({
   onOpenChange,
   profile,
   onProfileUpdate,
+  initialTab,
 }: SettingsModalProps) {
   const supabase = createClient()
   const [activeTab, setActiveTab] = useState<SettingsTab>('shortcuts')
+
+  // Deep-link: focus the requested tab whenever the modal (re)opens.
+  useEffect(() => {
+    if (open && initialTab) {
+      setActiveTab(initialTab)
+      setMobileNavOpen(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialTab])
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([])
   const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [saving, setSaving] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(true)
 
   // Profile editing state
   const [displayName, setDisplayName] = useState('')
@@ -347,8 +360,6 @@ export function SettingsModal({
   }, [open, onOpenChange])
 
   if (!open) return null
-
-  const [mobileNavOpen, setMobileNavOpen] = useState(true)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

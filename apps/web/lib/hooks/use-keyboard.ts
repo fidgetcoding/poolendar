@@ -68,6 +68,7 @@ export const SHORTCUT_DEFINITIONS = {
 
   // Events and tasks
   createEvent: { key: 'c', label: 'Create event', category: 'items' },
+  newTask: { key: 't', label: 'New task (N then T)', category: 'items' },
   editSelected: { key: 'e', label: 'Edit selected', category: 'items' },
   deleteSelected: { key: 'Delete', label: 'Delete selected', category: 'items' },
   deleteSelectedAlt: { key: 'Backspace', label: 'Delete selected', category: 'items' },

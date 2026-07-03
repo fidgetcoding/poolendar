@@ -26,6 +26,7 @@ import { KanbanColumn } from './KanbanColumn'
 import { BoardSwitcher } from './BoardSwitcher'
 import { KanbanFilters, type KanbanFilterState } from './KanbanFilters'
 import { DragPreview } from './DragPreview'
+import { PanelViewToggle } from '@/components/PanelViewToggle'
 
 const COLUMN_ORDER: TaskStatus[] = ['backlog', 'in_progress', 'check', 'done']
 
@@ -272,11 +273,14 @@ export function KanbanBoard({
           futureCount={futureCount}
         />
 
-        <KanbanFilters
-          tags={tags}
-          filters={filters}
-          onFiltersChange={setFilters}
-        />
+        <div className="flex items-center gap-2">
+          <KanbanFilters
+            tags={tags}
+            filters={filters}
+            onFiltersChange={setFilters}
+          />
+          <PanelViewToggle />
+        </div>
       </div>
 
       {/* Kanban columns */}
