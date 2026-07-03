@@ -125,19 +125,27 @@ describe('Google OAuth', () => {
       ).rejects.toThrow('Google token exchange failed: 400')
     })
 
-    it('throws when no refresh_token is returned', async () => {
-      ;(globalThis.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          access_token: 'at_123',
-          // no refresh_token
-          expires_in: 3600,
-        }),
-      })
+    it('returns an undefined refresh_token when Google omits it (re-consent)', async () => {
+      ;(globalThis.fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'at_123',
+            // no refresh_token — Google omits it when offline access already granted
+            expires_in: 3600,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ email: 'nate@poolendar.com' }),
+        })
 
-      await expect(
-        exchangeCodeForTokens('code', 'https://example.com/cb')
-      ).rejects.toThrow('No refresh_token returned')
+      const result = await exchangeCodeForTokens('code', 'https://example.com/cb')
+
+      // No throw — saveGoogleAccount preserves the token already on file.
+      expect(result.refresh_token).toBeUndefined()
+      expect(result.access_token).toBe('at_123')
+      expect(result.email).toBe('nate@poolendar.com')
     })
 
     it('throws when userinfo fetch fails', async () => {
@@ -256,6 +264,125 @@ describe('Google OAuth', () => {
       await expect(mod.disconnectGoogleAccount('acct-1')).rejects.toThrow(
         'Failed to disconnect Google account'
       )
+    })
+  })
+
+  // ── saveGoogleAccount ─────────────────────────────────────────────────
+
+  describe('saveGoogleAccount()', () => {
+    /** Builds a from('google_accounts') stub whose upsert arg is inspectable. */
+    function makeGoogleAccountsChain(opts: {
+      existingRefresh?: string
+      accountId?: string
+    }) {
+      const upsert = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { id: opts.accountId ?? 'acct-9' },
+            error: null,
+          }),
+        }),
+      })
+      const maybeSingle = vi.fn().mockResolvedValue({
+        data: opts.existingRefresh
+          ? { refresh_token: opts.existingRefresh }
+          : null,
+        error: null,
+      })
+      const select = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ maybeSingle }),
+        }),
+      })
+      return { upsert, select }
+    }
+
+    it('encrypts both tokens before the upsert — no plaintext reaches the DB', async () => {
+      vi.resetModules()
+      const { createServerClient } = await import('@supabase/ssr')
+      const ga = makeGoogleAccountsChain({})
+      ;(createServerClient as any).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) =>
+          table === 'google_accounts' ? ga : {}
+        ),
+      })
+      // Calendar-list fetch fails → the calendars upsert loop is skipped.
+      ;(globalThis.fetch as any).mockResolvedValueOnce({ ok: false, status: 500 })
+
+      const mod = await import('../oauth')
+      const { isEncrypted, decryptToken } = await import('../../crypto')
+
+      const accountId = await mod.saveGoogleAccount('user-1', {
+        access_token: 'at_plaintext',
+        refresh_token: 'rt_plaintext',
+        expires_in: 3600,
+        email: 'nate@poolendar.com',
+      })
+
+      expect(accountId).toBe('acct-9')
+
+      const payload = ga.upsert.mock.calls[0]![0]
+      // Ciphertext, not plaintext.
+      expect(payload.access_token).not.toBe('at_plaintext')
+      expect(payload.refresh_token).not.toBe('rt_plaintext')
+      expect(isEncrypted(payload.access_token)).toBe(true)
+      expect(isEncrypted(payload.refresh_token)).toBe(true)
+      // …and it round-trips back to the originals.
+      expect(decryptToken(payload.access_token)).toBe('at_plaintext')
+      expect(decryptToken(payload.refresh_token)).toBe('rt_plaintext')
+    })
+
+    it('preserves the stored refresh_token when Google omits one', async () => {
+      vi.resetModules()
+      const { createServerClient } = await import('@supabase/ssr')
+      const ga = makeGoogleAccountsChain({ existingRefresh: 'v1:EXISTING_CIPHERTEXT' })
+      ;(createServerClient as any).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) =>
+          table === 'google_accounts' ? ga : {}
+        ),
+      })
+      ;(globalThis.fetch as any).mockResolvedValueOnce({ ok: false, status: 500 })
+
+      const mod = await import('../oauth')
+      const { isEncrypted, decryptToken } = await import('../../crypto')
+
+      await mod.saveGoogleAccount('user-1', {
+        access_token: 'at_new',
+        // no refresh_token
+        expires_in: 3600,
+        email: 'nate@poolendar.com',
+      })
+
+      const payload = ga.upsert.mock.calls[0]![0]
+      // Existing ciphertext kept verbatim — not overwritten, not re-encrypted.
+      expect(payload.refresh_token).toBe('v1:EXISTING_CIPHERTEXT')
+      // The fresh access token is still encrypted.
+      expect(isEncrypted(payload.access_token)).toBe(true)
+      expect(decryptToken(payload.access_token)).toBe('at_new')
+    })
+
+    it('throws when no refresh_token is provided and none is stored', async () => {
+      vi.resetModules()
+      const { createServerClient } = await import('@supabase/ssr')
+      const ga = makeGoogleAccountsChain({}) // maybeSingle → null
+      ;(createServerClient as any).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) =>
+          table === 'google_accounts' ? ga : {}
+        ),
+      })
+
+      const mod = await import('../oauth')
+
+      await expect(
+        mod.saveGoogleAccount('user-1', {
+          access_token: 'at_new',
+          expires_in: 3600,
+          email: 'nate@poolendar.com',
+        })
+      ).rejects.toThrow('no refresh_token')
+
+      // Never reached the upsert.
+      expect(ga.upsert).not.toHaveBeenCalled()
     })
   })
 })

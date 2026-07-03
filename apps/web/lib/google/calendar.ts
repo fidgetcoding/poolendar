@@ -222,17 +222,49 @@ export async function watchGoogleCalendar(
   const accessToken = await getGoogleAccessToken(accountId)
   const channelId = crypto.randomUUID()
 
+  const body: Record<string, unknown> = {
+    id: channelId,
+    type: 'web_hook',
+    address: webhookUrl,
+    params: { ttl: '604800' }, // 7 days
+  }
+
+  // Google echoes `token` back on every notification as x-goog-channel-token.
+  // The webhook route validates it against GOOGLE_WEBHOOK_SECRET, so a channel
+  // registered without the secret would never pass validation — set it here.
+  const secret = process.env.GOOGLE_WEBHOOK_SECRET
+  if (secret && secret.trim() && secret.trim().toLowerCase() !== 'placeholder') {
+    body.token = secret
+  }
+
   return googleCalendarRequest(
     accessToken,
     `/calendars/${encodeURIComponent(calendarId)}/events/watch`,
     {
       method: 'POST',
-      body: JSON.stringify({
-        id: channelId,
-        type: 'web_hook',
-        address: webhookUrl,
-        params: { ttl: '604800' }, // 7 days
-      }),
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+/**
+ * Push a calendar's colour to Google via calendarList.update. Uses
+ * colorRgbFormat=true so an arbitrary hex background can be set (rather than one
+ * of Google's fixed palette IDs). Callers swallow failures (spec #49a) — the
+ * local colour is authoritative for rendering.
+ */
+export async function updateGoogleCalendarColor(
+  accountId: string,
+  googleCalendarId: string,
+  hexColor: string
+) {
+  const accessToken = await getGoogleAccessToken(accountId)
+  return googleCalendarRequest(
+    accessToken,
+    `/users/me/calendarList/${encodeURIComponent(googleCalendarId)}?colorRgbFormat=true`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ backgroundColor: hexColor }),
     }
   )
 }

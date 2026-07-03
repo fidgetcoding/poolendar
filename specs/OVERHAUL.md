@@ -53,8 +53,8 @@ v1 non-goals.
 |---|-------|--------|
 | 1 | Demolition + spec restore | DONE 2026-07-03 |
 | 2 | Security foundation | DONE 2026-07-03 |
-| 3 | Resurrect Google sync | in progress |
-| 4 | The Great Rewiring (UI) | pending |
+| 3 | Resurrect Google sync | DONE 2026-07-03 |
+| 4 | The Great Rewiring (UI) | in progress |
 | 5 | API contract + MCP | pending |
 | 6 | Booking + notifications | pending |
 | 7 | Ship + guard | pending |

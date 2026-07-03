@@ -12,6 +12,7 @@ interface CalendarsTabProps {
   onConnect: () => void
   onDisconnect: (id: string) => void
   onToggleCalendar: (id: string, active: boolean) => void
+  onResync: (accountId: string) => void
 }
 
 export function CalendarsTab({
@@ -20,6 +21,7 @@ export function CalendarsTab({
   onConnect,
   onDisconnect,
   onToggleCalendar,
+  onResync,
 }: CalendarsTabProps) {
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
 
@@ -62,6 +64,7 @@ export function CalendarsTab({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => onResync(account.id)}
                     className="rounded p-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
                     aria-label="Resync account"
                     title="Resync"

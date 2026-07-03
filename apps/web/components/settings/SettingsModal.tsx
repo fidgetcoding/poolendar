@@ -13,6 +13,7 @@ import {
   ExternalLink,
   User,
   Key,
+  Calendar,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -26,6 +27,7 @@ import { AvailabilityTab } from './AvailabilityTab'
 import { BookingPagesTab } from './BookingPagesTab'
 import { VideoConferencingTab } from './VideoConferencingTab'
 import { TelegramTab } from './TelegramTab'
+import { CalendarsTab } from './CalendarsTab'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type {
@@ -33,12 +35,15 @@ import type {
   UserSettings,
   NotificationSettings,
   ApiKey,
+  GoogleAccount,
+  Calendar as CalendarType,
 } from '@poolendar/types'
 
 type SettingsTab =
   | 'shortcuts'
   | 'video'
   | 'telegram'
+  | 'calendars'
   | 'general'
   | 'notifications'
   | 'tags'
@@ -115,6 +120,7 @@ const SETTINGS_SECTIONS: NavSection[] = [
   {
     label: 'Integrations',
     items: [
+      { key: 'calendars', label: 'Calendars', icon: Calendar },
       { key: 'video', label: 'Video Conferencing', icon: Video },
       { key: 'telegram', label: 'Telegram', icon: Send },
     ],
@@ -157,6 +163,8 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>('shortcuts')
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
+  const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([])
+  const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [saving, setSaving] = useState(false)
 
   // Profile editing state
@@ -174,6 +182,7 @@ export function SettingsModal({
     setCompany(profile.company || '')
 
     loadApiKeys()
+    loadCalendars()
   }, [open, profile])
 
   async function loadApiKeys() {
@@ -182,6 +191,66 @@ export function SettingsModal({
       .select('id, user_id, name, key_prefix, last_used_at, created_at')
       .order('created_at', { ascending: false })
     if (data) setApiKeys(data)
+  }
+
+  async function loadCalendars() {
+    try {
+      const res = await fetch('/api/calendars')
+      if (!res.ok) return
+      const { accounts } = (await res.json()) as {
+        accounts: (GoogleAccount & { calendars: CalendarType[] })[]
+      }
+      setGoogleAccounts(
+        accounts.map(({ calendars: _calendars, ...account }) => account)
+      )
+      setCalendars(accounts.flatMap((a) => a.calendars ?? []))
+    } catch {
+      // Non-fatal — the tab shows an empty state until reloaded.
+    }
+  }
+
+  function handleConnectCalendar() {
+    // Browser GET redirect flow (sets the CSRF nonce cookie).
+    window.location.href = '/api/google/connect'
+  }
+
+  async function handleDisconnectAccount(accountId: string) {
+    const res = await fetch(`/api/google/disconnect/${accountId}`, {
+      method: 'DELETE',
+    })
+    if (res.ok) {
+      toast.success('Google account disconnected')
+      loadCalendars()
+    } else {
+      toast.error('Failed to disconnect account')
+    }
+  }
+
+  async function handleToggleCalendar(calendarId: string, active: boolean) {
+    const res = await fetch(`/api/calendars/${calendarId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: active }),
+    })
+    if (res.ok) {
+      loadCalendars()
+    } else {
+      toast.error('Failed to update calendar')
+    }
+  }
+
+  async function handleResyncAccount(accountId: string) {
+    const res = await fetch('/api/google/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ google_account_id: accountId }),
+    })
+    if (res.ok) {
+      toast.success('Calendar resynced')
+      loadCalendars()
+    } else {
+      toast.error('Resync failed')
+    }
   }
 
   function updateSettings(partial: Partial<UserSettings>) {
@@ -410,6 +479,16 @@ export function SettingsModal({
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="space-y-8">
               {activeTab === 'shortcuts' && <ShortcutsTab />}
+              {activeTab === 'calendars' && (
+                <CalendarsTab
+                  googleAccounts={googleAccounts}
+                  calendars={calendars}
+                  onConnect={handleConnectCalendar}
+                  onDisconnect={handleDisconnectAccount}
+                  onToggleCalendar={handleToggleCalendar}
+                  onResync={handleResyncAccount}
+                />
+              )}
               {activeTab === 'video' && <VideoConferencingTab />}
               {activeTab === 'telegram' && (
                 <TelegramTab settings={settings} onChange={updateSettings} />

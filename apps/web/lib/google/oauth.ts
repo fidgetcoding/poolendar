@@ -53,7 +53,7 @@ export async function exchangeCodeForTokens(
   redirectUri: string
 ): Promise<{
   access_token: string
-  refresh_token: string
+  refresh_token?: string
   expires_in: number
   email: string
 }> {
@@ -78,11 +78,10 @@ export async function exchangeCodeForTokens(
 
   const tokenData = await tokenResponse.json()
 
-  if (!tokenData.refresh_token) {
-    throw new Error(
-      'No refresh_token returned. Ensure prompt=consent and access_type=offline.'
-    )
-  }
+  // Google omits refresh_token on re-consent when the user has already granted
+  // offline access. We don't throw here — saveGoogleAccount preserves the token
+  // already on file. (We still request access_type=offline + prompt=consent to
+  // maximise the odds of getting one on the first connect.)
 
   // Fetch the Google account email
   const userinfoResponse = await fetch(
@@ -142,7 +141,7 @@ export async function saveGoogleAccount(
   userId: string,
   tokens: {
     access_token: string
-    refresh_token: string
+    refresh_token?: string
     expires_in: number
     email: string
   }
@@ -151,6 +150,31 @@ export async function saveGoogleAccount(
   const tokenExpiresAt = new Date(
     Date.now() + tokens.expires_in * 1000
   ).toISOString()
+
+  // Resolve the refresh_token column. Prefer the freshly-issued token; when
+  // Google omitted it (re-consent), preserve the encrypted value already on
+  // file rather than overwriting it with null. First connect with no token on
+  // either side is unrecoverable — refuse loudly.
+  let refreshTokenColumn: string
+  if (tokens.refresh_token) {
+    refreshTokenColumn = encryptToken(tokens.refresh_token)
+  } else {
+    const { data: existing } = await supabase
+      .from('google_accounts')
+      .select('refresh_token')
+      .eq('user_id', userId)
+      .eq('email', tokens.email)
+      .maybeSingle()
+
+    if (!existing?.refresh_token) {
+      throw new Error(
+        'Google returned no refresh_token and none is stored for this account. ' +
+          'Re-connect with prompt=consent so a refresh_token is issued.'
+      )
+    }
+    // Keep the existing ciphertext verbatim — it is already encrypted at rest.
+    refreshTokenColumn = existing.refresh_token
+  }
 
   // Upsert the google_accounts row
   const { data: account, error: accountError } = await supabase
@@ -161,7 +185,7 @@ export async function saveGoogleAccount(
         email: tokens.email,
         // Tokens are encrypted at the app layer before they touch the DB.
         access_token: encryptToken(tokens.access_token),
-        refresh_token: encryptToken(tokens.refresh_token),
+        refresh_token: refreshTokenColumn,
         token_expires_at: tokenExpiresAt,
       },
       { onConflict: 'user_id,email' }

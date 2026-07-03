@@ -56,6 +56,20 @@ export async function GET(request: NextRequest) {
             avatar_url: user.user_metadata?.avatar_url || null,
           })
         }
+
+        // Supabase Auth is login-only. Calendar access is a separate OAuth flow
+        // (never provider_token). A user with no connected Google account gets
+        // sent straight into the Connect flow so the app has calendars to work
+        // with. The session cookies set above ride along on this redirect.
+        const { count } = await supabase
+          .from('google_accounts')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+
+        if (!count || count === 0) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || origin
+          return NextResponse.redirect(`${appUrl}/api/google/connect`)
+        }
       }
 
       const forwardedHost = request.headers.get('x-forwarded-host')

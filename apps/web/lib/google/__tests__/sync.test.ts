@@ -84,7 +84,8 @@ describe('Google Calendar Sync', () => {
   let pushEvent: typeof import('../sync').pushEvent
   let deleteRemoteEvent: typeof import('../sync').deleteRemoteEvent
   let pullChanges: typeof import('../sync').pullChanges
-  let handleWebhook: typeof import('../sync').handleWebhook
+  let initialSyncPrimaryCalendar: typeof import('../sync').initialSyncPrimaryCalendar
+  let retryPendingPushEvents: typeof import('../sync').retryPendingPushEvents
   let mapGoogleEventToLocal: typeof import('../sync').mapGoogleEventToLocal
   let mapLocalEventToGoogle: typeof import('../sync').mapLocalEventToGoogle
 
@@ -102,7 +103,8 @@ describe('Google Calendar Sync', () => {
     pushEvent = mod.pushEvent
     deleteRemoteEvent = mod.deleteRemoteEvent
     pullChanges = mod.pullChanges
-    handleWebhook = mod.handleWebhook
+    initialSyncPrimaryCalendar = mod.initialSyncPrimaryCalendar
+    retryPendingPushEvents = mod.retryPendingPushEvents
     mapGoogleEventToLocal = mod.mapGoogleEventToLocal
     mapLocalEventToGoogle = mod.mapLocalEventToGoogle
   })
@@ -701,59 +703,202 @@ describe('Google Calendar Sync', () => {
     })
   })
 
-  // ── handleWebhook ─────────────────────────────────────────────────────
+  // ── initialSyncPrimaryCalendar ────────────────────────────────────────
 
-  describe('handleWebhook()', () => {
-    it('triggers pullChanges for active accounts', async () => {
-      // Mock calendars lookup to find active accounts
-      const mockCalEq = vi.fn().mockResolvedValue({
-        data: [{ google_account_id: 'acct-1' }],
-        error: null,
-      })
-      const mockCalSelect = vi.fn().mockReturnValue({ eq: mockCalEq })
-
-      mockSupabaseFrom.mockImplementation((table: string) => {
-        if (table === 'calendars') {
-          return { select: mockCalSelect }
-        }
-        // pullChanges will also call from() for google_accounts, calendars, events
-        // Since we're testing handleWebhook dispatching, we can let pullChanges throw
-        // and verify the error is caught gracefully
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: null,
-                error: { message: 'mock error for pull' },
-              }),
-            }),
+  describe('initialSyncPrimaryCalendar()', () => {
+    it('syncs only the primary calendar and does not persist a sync token', async () => {
+      const accountSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { user_id: 'user-1' },
+            error: null,
           }),
-        }
+        }),
+      })
+      const accountUpdate = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
       })
 
-      // handleWebhook catches errors from pullChanges, so this should not throw
-      await expect(
-        handleWebhook('channel-uuid', 'resource-id')
-      ).resolves.toBeUndefined()
-    })
-
-    it('does nothing when no active calendars exist', async () => {
-      const mockCalEq = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
+      // Two active calendars; primary is second in the list to prove selection.
+      const calSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({
+            data: [
+              { id: 'cal-2', google_calendar_id: 'secondary', is_primary: false },
+              { id: 'cal-1', google_calendar_id: 'primary', is_primary: true },
+            ],
+            error: null,
+          }),
+        }),
       })
-      const mockCalSelect = vi.fn().mockReturnValue({ eq: mockCalEq })
+
+      const evtSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        }),
+      })
+      const evtInsert = vi.fn().mockResolvedValue({ error: null })
 
       mockSupabaseFrom.mockImplementation((table: string) => {
-        if (table === 'calendars') {
-          return { select: mockCalSelect }
-        }
+        if (table === 'google_accounts') return { select: accountSelect, update: accountUpdate }
+        if (table === 'calendars') return { select: calSelect }
+        if (table === 'events') return { select: evtSelect, insert: evtInsert }
         return {}
       })
 
-      await expect(
-        handleWebhook('channel-uuid', 'resource-id')
-      ).resolves.toBeUndefined()
+      mockListGoogleEvents.mockResolvedValue({
+        items: [
+          {
+            id: 'g1',
+            summary: 'E',
+            start: { dateTime: '2026-06-15T09:00:00Z' },
+            end: { dateTime: '2026-06-15T10:00:00Z' },
+            status: 'confirmed',
+            etag: '"e1"',
+          },
+        ],
+        nextSyncToken: 'tok',
+      })
+
+      const result = await initialSyncPrimaryCalendar('acct-1')
+
+      expect(result.created).toBe(1)
+      // Only the primary calendar is fetched.
+      expect(mockListGoogleEvents).toHaveBeenCalledTimes(1)
+      expect(mockListGoogleEvents.mock.calls[0]![1]).toBe('primary')
+      // The sync token is deliberately NOT persisted (poll does the full sync).
+      expect(accountUpdate).not.toHaveBeenCalled()
+    })
+
+    it('returns zeroes when the account has no active calendars', async () => {
+      const accountSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { user_id: 'user-1' },
+            error: null,
+          }),
+        }),
+      })
+      const calSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      })
+
+      mockSupabaseFrom.mockImplementation((table: string) => {
+        if (table === 'google_accounts') return { select: accountSelect }
+        if (table === 'calendars') return { select: calSelect }
+        return {}
+      })
+
+      const result = await initialSyncPrimaryCalendar('acct-1')
+
+      expect(result).toEqual({ created: 0, updated: 0, deleted: 0 })
+      expect(mockListGoogleEvents).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── retryPendingPushEvents ────────────────────────────────────────────
+
+  describe('retryPendingPushEvents()', () => {
+    // First from('events') call = the pending_push selection; later calls = the
+    // per-event update. `updateFn` captures the update payload.
+    function wireEvents(pending: unknown[], updateFn: ReturnType<typeof vi.fn>, calendar: unknown) {
+      let eventsCall = 0
+      mockSupabaseFrom.mockImplementation((table: string) => {
+        if (table === 'events') {
+          eventsCall++
+          if (eventsCall === 1) {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  lt: vi.fn().mockReturnValue({
+                    or: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockResolvedValue({ data: pending, error: null }),
+                    }),
+                  }),
+                }),
+              }),
+            }
+          }
+          return { update: updateFn }
+        }
+        if (table === 'calendars') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: calendar, error: null }),
+              }),
+            }),
+          }
+        }
+        return {}
+      })
+    }
+
+    it('increments retry_count and backs off when the re-push fails', async () => {
+      const event: any = { ...makeEvent({ id: 'evt-strand', google_event_id: null }), retry_count: 0 }
+      mockCreateGoogleEvent.mockRejectedValue(new Error('google down'))
+
+      const updateEq = vi.fn().mockResolvedValue({ error: null })
+      const updateFn = vi.fn().mockReturnValue({ eq: updateEq })
+      wireEvents([event], updateFn, makeCalendar())
+
+      const result = await retryPendingPushEvents()
+
+      expect(result).toEqual({ retried: 1, succeeded: 0, failed: 1, gaveUp: 0 })
+      const payload = updateFn.mock.calls[0]![0]
+      expect(payload.retry_count).toBe(1)
+      expect(payload.next_retry_at).toBeDefined()
+    })
+
+    it('gives up on the 5th attempt (retry_count reaches the cap)', async () => {
+      const event: any = { ...makeEvent({ id: 'evt-strand', google_event_id: null }), retry_count: 4 }
+      mockCreateGoogleEvent.mockRejectedValue(new Error('still down'))
+
+      const updateEq = vi.fn().mockResolvedValue({ error: null })
+      const updateFn = vi.fn().mockReturnValue({ eq: updateEq })
+      wireEvents([event], updateFn, makeCalendar())
+
+      const result = await retryPendingPushEvents()
+
+      expect(result).toEqual({ retried: 1, succeeded: 0, failed: 0, gaveUp: 1 })
+      expect(updateFn.mock.calls[0]![0].retry_count).toBe(5)
+    })
+
+    it('marks the event synced when the re-push succeeds', async () => {
+      const event: any = { ...makeEvent({ id: 'evt-strand', google_event_id: null }), retry_count: 2 }
+      mockCreateGoogleEvent.mockResolvedValue({ id: 'g-new', etag: '"e"' })
+
+      // pushEvent's success path: update → eq → select → single
+      const single = vi.fn().mockResolvedValue({
+        data: { ...event, google_event_id: 'g-new', sync_status: 'synced' },
+        error: null,
+      })
+      const updateFn = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) }),
+      })
+      wireEvents([event], updateFn, makeCalendar())
+
+      const result = await retryPendingPushEvents()
+
+      expect(result).toEqual({ retried: 1, succeeded: 1, failed: 0, gaveUp: 0 })
+    })
+
+    it('gives up immediately when the owning calendar is gone', async () => {
+      const event: any = { ...makeEvent({ id: 'evt-orphan', google_event_id: null }), retry_count: 0 }
+
+      const updateEq = vi.fn().mockResolvedValue({ error: null })
+      const updateFn = vi.fn().mockReturnValue({ eq: updateEq })
+      wireEvents([event], updateFn, null) // calendar lookup returns null
+
+      const result = await retryPendingPushEvents()
+
+      expect(result).toEqual({ retried: 1, succeeded: 0, failed: 0, gaveUp: 1 })
+      expect(updateFn.mock.calls[0]![0].retry_count).toBe(5)
+      expect(mockCreateGoogleEvent).not.toHaveBeenCalled()
     })
   })
 })
