@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
-import type { CalendarItemData } from './calendar-types'
+import type { CalendarItemData, CalendarItemType } from './calendar-types'
 import { CalendarItem } from './CalendarItem'
 
 interface DayColumnProps {
@@ -12,10 +12,16 @@ interface DayColumnProps {
   items: CalendarItemData[]
   hourHeight: number
   isToday: boolean
+  startHour?: number
+  endHour?: number
+  draggingResolution?: number
+  dimPastEvents?: boolean
   onTimeSlotClick?: (date: Date, startTime: Date, endTime?: Date) => void
-  onItemClick?: (item: CalendarItemData) => void
+  onItemClick?: (item: CalendarItemData, anchorRect?: DOMRect) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
+  onItemResize?: (itemId: string, itemType: CalendarItemType, newEnd: Date) => void
   onRoutineCheckboxClick?: (item: CalendarItemData) => void
+  onTaskCheckboxClick?: (item: CalendarItemData) => void
 }
 
 interface DragCreateState {
@@ -93,14 +99,14 @@ function computeOverlapLayout(items: CalendarItemData[]): LayoutColumn[] {
   return result
 }
 
-function getTimePosition(time: Date, hourHeight: number): number {
+function getTimePosition(time: Date, hourHeight: number, startHour: number): number {
   const hours = time.getHours()
   const minutes = time.getMinutes()
-  return (hours + minutes / 60) * hourHeight
+  return (hours - startHour + minutes / 60) * hourHeight
 }
 
-function snapToQuarterHour(minutes: number): number {
-  return Math.round(minutes / 15) * 15
+function snapToResolution(minutes: number, resolution: number): number {
+  return Math.round(minutes / resolution) * resolution
 }
 
 const CURRENT_TIME_UPDATE_MS = 60_000
@@ -111,10 +117,16 @@ export const DayColumn = React.memo(function DayColumn({
   items,
   hourHeight,
   isToday,
+  startHour = 0,
+  endHour = 24,
+  draggingResolution = 15,
+  dimPastEvents = false,
   onTimeSlotClick,
   onItemClick,
   onItemDoubleClick,
+  onItemResize,
   onRoutineCheckboxClick,
+  onTaskCheckboxClick,
 }: DayColumnProps) {
   const [currentMinutes, setCurrentMinutes] = React.useState(() => {
     const now = new Date()
@@ -162,14 +174,17 @@ export const DayColumn = React.memo(function DayColumn({
     }
   }, [])
 
-  const totalHeight = 24 * hourHeight
+  const totalHeight = (endHour - startHour) * hourHeight
   const layout = computeOverlapLayout(items)
-  const currentTimeTop = (currentMinutes / 60) * hourHeight
+  const currentTimeTop = (currentMinutes / 60 - startHour) * hourHeight
 
   function yOffsetToTime(yOffset: number): Date {
-    const rawMinutes = (yOffset / hourHeight) * 60
-    const snappedMinutes = snapToQuarterHour(rawMinutes)
-    const clampedMinutes = Math.max(0, Math.min(24 * 60, snappedMinutes))
+    const rawMinutes = (yOffset / hourHeight) * 60 + startHour * 60
+    const snappedMinutes = snapToResolution(rawMinutes, draggingResolution)
+    const clampedMinutes = Math.max(
+      startHour * 60,
+      Math.min(endHour * 60, snappedMinutes)
+    )
     const hour = Math.floor(clampedMinutes / 60)
     const minute = clampedMinutes % 60
     const time = new Date(date)
@@ -317,7 +332,7 @@ export const DayColumn = React.memo(function DayColumn({
   }, [dragCreate?.startY, dragCreate?.currentY])
 
   const hours: number[] = []
-  for (let h = 0; h < 24; h++) {
+  for (let h = startHour; h < endHour; h++) {
     hours.push(h)
   }
 
@@ -345,12 +360,12 @@ export const DayColumn = React.memo(function DayColumn({
         <React.Fragment key={hour}>
           <div
             className="absolute left-0 right-0 border-t border-[var(--border)] opacity-50"
-            style={{ top: hour * hourHeight }}
+            style={{ top: (hour - startHour) * hourHeight }}
           />
           <div
             className="absolute left-0 right-0 border-t border-[var(--border)] opacity-25"
             style={{
-              top: hour * hourHeight + hourHeight / 2,
+              top: (hour - startHour) * hourHeight + hourHeight / 2,
               borderStyle: 'dashed',
             }}
           />
@@ -373,8 +388,8 @@ export const DayColumn = React.memo(function DayColumn({
       )}
 
       {layout.map(({ item, columnIndex, totalColumns }) => {
-        const top = getTimePosition(item.startTime, hourHeight)
-        const bottom = getTimePosition(item.endTime, hourHeight)
+        const top = getTimePosition(item.startTime, hourHeight, startHour)
+        const bottom = getTimePosition(item.endTime, hourHeight, startHour)
         const rawHeight = bottom - top
         const height = Math.max(rawHeight, MIN_ITEM_HEIGHT)
         const widthPercent = 100 / totalColumns
@@ -384,6 +399,9 @@ export const DayColumn = React.memo(function DayColumn({
           <CalendarItem
             key={item.id}
             item={item}
+            hourHeight={hourHeight}
+            resizeResolution={draggingResolution}
+            dimPastEvents={dimPastEvents}
             style={{
               top,
               height,
@@ -392,7 +410,9 @@ export const DayColumn = React.memo(function DayColumn({
             }}
             onItemClick={onItemClick}
             onItemDoubleClick={onItemDoubleClick}
+            onItemResize={onItemResize}
             onRoutineCheckboxClick={onRoutineCheckboxClick}
+            onTaskCheckboxClick={onTaskCheckboxClick}
           />
         )
       })}

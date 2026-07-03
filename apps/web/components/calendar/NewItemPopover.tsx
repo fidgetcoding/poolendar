@@ -6,14 +6,16 @@ import { format } from 'date-fns'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+type NewItemType = 'event' | 'task' | 'routine'
+
 interface NewItemPopoverProps {
   date: Date
   startTime: Date
   endTime?: Date
   anchorRect: DOMRect | null
   onClose: () => void
-  onQuickCreate: (title: string, type: 'event' | 'task') => void
-  onOpenFullForm: (title: string, type: 'event' | 'task') => void
+  onQuickCreate: (title: string, type: NewItemType) => void
+  onOpenFullForm: (title: string, type: NewItemType) => void
 }
 
 const POPOVER_WIDTH = 280
@@ -51,7 +53,7 @@ export function NewItemPopover({
   onOpenFullForm,
 }: NewItemPopoverProps) {
   const [title, setTitle] = React.useState('')
-  const [itemType, setItemType] = React.useState<'event' | 'task'>('event')
+  const [itemType, setItemType] = React.useState<NewItemType>('event')
   const inputRef = React.useRef<HTMLInputElement>(null)
   const popoverRef = React.useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = React.useState(false)
@@ -194,6 +196,20 @@ export function NewItemPopover({
               )}
             >
               Task
+            </button>
+            <button
+              type="button"
+              onClick={() => setItemType('routine')}
+              className={cn(
+                'flex-1 py-1.5 text-xs font-medium',
+                'border-l border-[var(--border)]',
+                'transition-colors duration-150',
+                itemType === 'routine'
+                  ? 'bg-[var(--accent)] text-[var(--bg)]'
+                  : 'text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)]'
+              )}
+            >
+              Routine
             </button>
           </div>
         </div>

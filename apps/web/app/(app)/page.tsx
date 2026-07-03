@@ -1,16 +1,20 @@
 'use client'
 
 import { useMemo, useCallback } from 'react'
-import { parseISO, format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays } from 'date-fns'
+import { parseISO, format, addDays } from 'date-fns'
 import { useCalendarStore } from '@/lib/stores/calendar-store'
 import { useUIStore } from '@/lib/stores/ui-store'
-import { CalendarHeader, CalendarGrid } from '@/components/calendar'
+import { CalendarHeader } from '@/components/calendar'
+import { CalendarWorkspace } from '@/components/calendar/CalendarWorkspace'
+import { EditFormHost } from '@/components/calendar/EditFormHost'
+import { getVisibleDays } from '@/components/calendar/grid-helpers'
 import { KanbanBoard } from '@/components/kanban'
 import { useEvents } from '@/lib/hooks/use-events'
 import { useTasks, useMoveTask, useCompleteTask, useCreateTask, useUpdateTask } from '@/lib/hooks/use-tasks'
-import { useRoutines, useCompleteRoutineInstance, useResetRoutineInstance } from '@/lib/hooks/use-routines'
+import { useRoutines } from '@/lib/hooks/use-routines'
 import { useTags } from '@/lib/hooks/use-tags'
-import type { CalendarItemData } from '@/components/calendar/calendar-types'
+import { useCalendars, useCalendarAccounts } from '@/lib/hooks/use-calendars'
+import { useProfile } from '@/lib/hooks/use-profile'
 import type { TaskStatus, TaskBoard, TaskImportance } from '@poolendar/types'
 
 export default function AppPage() {
@@ -18,73 +22,60 @@ export default function AppPage() {
     view,
     customDays,
     selectedDate,
-    hourHeight,
     showWeekends,
+    widenCurrentDay,
     dimPastEvents,
     showDeclinedEvents,
     showCompletedTasks,
+    mergeDuplicateEvents,
     goToToday,
     goToPrevPeriod,
     goToNextPeriod,
     setView,
     setShowWeekends,
+    setWidenCurrentDay,
     setDimPastEvents,
     setShowDeclinedEvents,
     setShowCompletedTasks,
+    setMergeDuplicateEvents,
   } = useCalendarStore()
 
-  const { taskPanelViewMode, openEditForm } = useUIStore()
+  const { taskPanelViewMode } = useUIStore()
 
   const currentDate = useMemo(
     () => parseISO(selectedDate + 'T00:00:00'),
     [selectedDate]
   )
 
-  const gridView = view === '2weeks' || view === 'custom' ? 'week' : view
-
+  // Range covering every visible day of the current view (2-weeks / custom
+  // included), padded to the end of the last day.
   const { start: viewStart, end: viewEnd } = useMemo(() => {
-    const d = currentDate
-    if (view === 'day') return { start: format(d, 'yyyy-MM-dd'), end: format(d, 'yyyy-MM-dd') }
-    if (view === 'month') return { start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') }
-    const ws = startOfWeek(d, { weekStartsOn: 0 })
-    const days = view === '2weeks' ? 13 : view === 'custom' ? customDays - 1 : 6
-    return { start: format(ws, 'yyyy-MM-dd'), end: format(addDays(ws, days), 'yyyy-MM-dd') }
+    const days = getVisibleDays(currentDate, view, customDays)
+    const first = days[0] ?? currentDate
+    const last = days[days.length - 1] ?? currentDate
+    return {
+      start: format(first, 'yyyy-MM-dd'),
+      end: format(addDays(last, 1), 'yyyy-MM-dd'),
+    }
   }, [currentDate, view, customDays])
 
   const { data: events = [] } = useEvents(viewStart, viewEnd)
   const { data: tasks = [] } = useTasks({})
   const { data: routines = [] } = useRoutines()
   const { data: tags = [] } = useTags()
-  const calendars: import('@poolendar/types').Calendar[] = []
+  const { data: calendars = [] } = useCalendars()
+  const { data: accounts = [] } = useCalendarAccounts()
+  const { data: profile } = useProfile()
+
+  const userId = profile?.id ?? null
+  const selfEmails = useMemo(() => accounts.map((a) => a.email), [accounts])
 
   const moveTask = useMoveTask()
   const completeTask = useCompleteTask()
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
 
-  // Calendar item interactions
-  const handleItemClick = useCallback(
-    (item: { id: string; type: 'event' | 'task' | 'routine' }) => {
-      useCalendarStore.getState().selectItem(item.id, item.type)
-    },
-    []
-  )
-
-  const handleItemDoubleClick = useCallback(
-    (item: { id: string; type: 'event' | 'task' | 'routine' }) => {
-      openEditForm(item.id, item.type)
-    },
-    [openEditForm]
-  )
-
-  const handleTimeSlotClick = useCallback(
-    (_date: Date, _time: Date) => {
-      openEditForm(null, 'event')
-    },
-    [openEditForm]
-  )
-
-  // Kanban interactions
+  // ---- Kanban interactions ----
   const handleTaskMove = useCallback(
     (taskId: string, newStatus: TaskStatus, newPosition: number) => {
       moveTask.mutate({ id: taskId, status: newStatus, position: newPosition })
@@ -119,6 +110,7 @@ export default function AppPage() {
     [createTask]
   )
 
+  const { openEditForm } = useUIStore()
   const handleTaskClick = useCallback(
     (task: import('@poolendar/types').Task) => {
       openEditForm(task.id, 'task')
@@ -133,29 +125,10 @@ export default function AppPage() {
     [completeTask]
   )
 
-  // Routine instance completion toggle
-  const completeRoutineInstance = useCompleteRoutineInstance()
-  const resetRoutineInstance = useResetRoutineInstance()
-
-  const handleRoutineCheckboxClick = useCallback(
-    (item: CalendarItemData) => {
-      if (!item.routine) return
-      // Extract date from the composite id: `${routine.id}-${yyyy-MM-dd}`
-      const dateStr = format(item.startTime, 'yyyy-MM-dd')
-      if (item.routineInstanceStatus === 'completed') {
-        resetRoutineInstance.mutate({ routine_id: item.routine.id, date: dateStr })
-      } else {
-        completeRoutineInstance.mutate({ routine_id: item.routine.id, date: dateStr })
-      }
-    },
-    [completeRoutineInstance, resetRoutineInstance]
-  )
-
   const showKanban = taskPanelViewMode === 'board'
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top navigation bar */}
       <CalendarHeader
         currentDate={currentDate}
         view={view}
@@ -165,16 +138,19 @@ export default function AppPage() {
         onNext={goToNextPeriod}
         onViewChange={(v) => setView(v)}
         showWeekends={showWeekends}
+        widenCurrentDay={widenCurrentDay}
         dimPastEvents={dimPastEvents}
         showDeclinedEvents={showDeclinedEvents}
         showCompletedTasks={showCompletedTasks}
+        mergeDuplicateEvents={mergeDuplicateEvents}
         onShowWeekendsChange={setShowWeekends}
+        onWidenCurrentDayChange={setWidenCurrentDay}
         onDimPastEventsChange={setDimPastEvents}
         onShowDeclinedEventsChange={setShowDeclinedEvents}
         onShowCompletedTasksChange={setShowCompletedTasks}
+        onMergeDuplicateEventsChange={setMergeDuplicateEvents}
       />
 
-      {/* Main content area */}
       {showKanban ? (
         <div className="flex-1 overflow-hidden">
           <KanbanBoard
@@ -190,21 +166,28 @@ export default function AppPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-hidden">
-          <CalendarGrid
-            view={gridView}
-            currentDate={currentDate}
+          <CalendarWorkspace
             events={events}
             tasks={tasks}
             routines={routines}
             calendars={calendars}
-            hourHeight={hourHeight}
-            onItemClick={handleItemClick}
-            onItemDoubleClick={handleItemDoubleClick}
-            onTimeSlotClick={handleTimeSlotClick}
-            onRoutineCheckboxClick={handleRoutineCheckboxClick}
+            tags={tags}
+            selfEmails={selfEmails}
+            userId={userId}
+            currentDate={currentDate}
           />
         </div>
       )}
+
+      {/* Globally-mounted edit form — opens from grid, kanban, keyboard, or menus */}
+      <EditFormHost
+        events={events}
+        tasks={tasks}
+        routines={routines}
+        calendars={calendars}
+        tags={tags}
+        userId={userId}
+      />
     </div>
   )
 }

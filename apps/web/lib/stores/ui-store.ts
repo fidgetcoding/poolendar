@@ -29,6 +29,8 @@ interface UIState {
   editFormItemId: string | null
   editFormItemType: 'event' | 'task' | 'routine' | null
   editFormTab: 'event' | 'task' | 'routine'
+  /** Seed data for create-mode (e.g. the clicked time slot). */
+  editFormInitialData: Record<string, unknown> | null
 
   // Context menu
   contextMenu: {
@@ -72,7 +74,8 @@ interface UIState {
   openEditForm: (
     itemId: string | null,
     itemType: 'event' | 'task' | 'routine',
-    tab?: 'event' | 'task' | 'routine'
+    tab?: 'event' | 'task' | 'routine',
+    initialData?: Record<string, unknown> | null
   ) => void
   closeEditForm: () => void
   setEditFormTab: (tab: 'event' | 'task' | 'routine') => void
@@ -119,6 +122,7 @@ export const useUIStore = create<UIState>()((set) => ({
   editFormItemId: null,
   editFormItemType: null,
   editFormTab: 'event',
+  editFormInitialData: null,
 
   // Context menu
   contextMenu: { ...initialContextMenu },
@@ -160,12 +164,13 @@ export const useUIStore = create<UIState>()((set) => ({
   closePreviewPopover: () =>
     set({ previewPopover: { ...initialPreviewPopover } }),
 
-  openEditForm: (itemId, itemType, tab) =>
+  openEditForm: (itemId, itemType, tab, initialData) =>
     set({
       editFormOpen: true,
       editFormItemId: itemId,
       editFormItemType: itemType,
       editFormTab: tab ?? itemType,
+      editFormInitialData: initialData ?? null,
       previewPopover: { ...initialPreviewPopover },
     }),
 
@@ -174,6 +179,7 @@ export const useUIStore = create<UIState>()((set) => ({
       editFormOpen: false,
       editFormItemId: null,
       editFormItemType: null,
+      editFormInitialData: null,
     }),
 
   setEditFormTab: (tab) => set({ editFormTab: tab }),

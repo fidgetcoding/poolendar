@@ -5,16 +5,23 @@ import { useDraggable } from '@dnd-kit/core'
 import { CheckSquare, Repeat2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
-import type { CalendarItemData } from './calendar-types'
+import type { CalendarItemData, CalendarItemType } from './calendar-types'
 
 interface CalendarItemProps {
   item: CalendarItemData
   style: React.CSSProperties
-  onItemClick?: (item: CalendarItemData) => void
+  /** Pixels per hour — used so resize honors the current zoom (not a fixed 60). */
+  hourHeight?: number
+  /** Snap resolution for resize, in minutes. */
+  resizeResolution?: number
+  /** When on, past and completed items render dimmed (#21, #86). */
+  dimPastEvents?: boolean
+  onItemClick?: (item: CalendarItemData, anchorRect?: DOMRect) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
   onResizeStart?: (item: CalendarItemData) => void
-  onItemResize?: (itemId: string, itemType: string, newEnd: Date) => void
+  onItemResize?: (itemId: string, itemType: CalendarItemType, newEnd: Date) => void
   onRoutineCheckboxClick?: (item: CalendarItemData) => void
+  onTaskCheckboxClick?: (item: CalendarItemData) => void
 }
 
 function darkenColor(hex: string, amount: number): string {
@@ -40,11 +47,15 @@ function formatTimeRange(start: Date, end: Date): string {
 export const CalendarItem = React.memo(function CalendarItem({
   item,
   style: positionStyle,
+  hourHeight = 60,
+  resizeResolution = 15,
+  dimPastEvents = false,
   onItemClick,
   onItemDoubleClick,
   onResizeStart,
   onItemResize,
   onRoutineCheckboxClick,
+  onTaskCheckboxClick,
 }: CalendarItemProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: item.id,
@@ -54,12 +65,15 @@ export const CalendarItem = React.memo(function CalendarItem({
   const isTaskCompleted = item.type === 'task' && item.task?.status === 'done'
   const isRoutineCompleted = item.type === 'routine' && item.routineInstanceStatus === 'completed'
   const isCompleted = isTaskCompleted || isRoutineCompleted
+  const isPast = item.endTime.getTime() < Date.now()
+  const shouldDim = dimPastEvents && (isPast || isCompleted)
   const heightNum = parseFloat(String(positionStyle.height) || '0')
   const isCompact = heightNum < 40
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    onItemClick?.(item)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    onItemClick?.(item, rect)
   }
 
   function handleDoubleClick(e: React.MouseEvent) {
@@ -74,11 +88,12 @@ export const CalendarItem = React.memo(function CalendarItem({
 
     const startY = e.clientY
     const originalEndTime = item.endTime
-    const hourHeightPx = 60 // pixels per hour, matches DayColumn default
+    const hourHeightPx = hourHeight // pixels per hour, respects zoom level
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = moveEvent.clientY - startY
-      const deltaMinutes = Math.round(deltaY / (hourHeightPx / 60) / 15) * 15
+      const deltaMinutes =
+        Math.round(deltaY / (hourHeightPx / 60) / resizeResolution) * resizeResolution
       const newEnd = new Date(originalEndTime.getTime() + deltaMinutes * 60000)
       if (newEnd > item.startTime) {
         onItemResize?.(item.id, item.type, newEnd)
@@ -94,9 +109,14 @@ export const CalendarItem = React.memo(function CalendarItem({
     document.addEventListener('mouseup', handleMouseUp)
   }
 
+  function handleTaskCheckbox(e: React.MouseEvent) {
+    e.stopPropagation()
+    onTaskCheckboxClick?.(item)
+  }
+
   const mergedStyle: React.CSSProperties = {
     ...positionStyle,
-    opacity: isDragging ? 0.4 : isCompleted ? 0.5 : 1,
+    opacity: isDragging ? 0.4 : shouldDim ? 0.5 : 1,
     zIndex: isDragging ? 100 : undefined,
   }
 
@@ -185,11 +205,21 @@ export const CalendarItem = React.memo(function CalendarItem({
           }}
         />
         <div className="relative flex items-start gap-1.5 pl-2 pr-2 py-1 min-h-0 overflow-hidden">
-          <CheckSquare
-            size={12}
-            className="shrink-0 mt-px"
-            style={{ color: item.color }}
-          />
+          <button
+            type="button"
+            onClick={handleTaskCheckbox}
+            className={cn(
+              'shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center mt-px',
+              'transition-colors duration-150'
+            )}
+            style={{
+              borderColor: item.color,
+              backgroundColor: isTaskCompleted ? item.color : 'transparent',
+            }}
+            aria-label={isTaskCompleted ? 'Reopen task' : 'Complete task'}
+          >
+            {isTaskCompleted && <CheckSquare size={8} style={{ color: '#fff' }} />}
+          </button>
           <div className="min-w-0 flex-1">
             {isCompact ? (
               <div className="flex items-center gap-1.5">

@@ -8,13 +8,15 @@ import { cn } from '@/lib/utils'
 import type { CalendarItemData } from './calendar-types'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MAX_VISIBLE_ITEMS = 3
+const DEFAULT_MAX_VISIBLE_ITEMS = 4
 
 interface MonthGridProps {
   currentDate: Date
   visibleDays: Date[]
   items: CalendarItemData[]
-  onItemClick?: (item: CalendarItemData) => void
+  /** Max items shown per day cell before "+N more" (#9a, from settings). */
+  limitPerDay?: number
+  onItemClick?: (item: CalendarItemData, anchorRect?: DOMRect) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
 }
 
@@ -140,6 +142,7 @@ export function MonthGrid({
   currentDate,
   visibleDays,
   items,
+  limitPerDay = DEFAULT_MAX_VISIBLE_ITEMS,
   onItemClick,
   onItemDoubleClick,
 }: MonthGridProps) {
@@ -181,8 +184,8 @@ export function MonthGrid({
           const dayItems = items.filter((item) => isSameDay(item.startTime, day))
           const today = isToday(day)
           const inMonth = isSameMonth(day, currentDate)
-          const visible = dayItems.slice(0, MAX_VISIBLE_ITEMS)
-          const overflowCount = dayItems.length - MAX_VISIBLE_ITEMS
+          const visible = dayItems.slice(0, limitPerDay)
+          const overflowCount = dayItems.length - limitPerDay
 
           return (
             <div
@@ -257,7 +260,7 @@ export function MonthGrid({
 
 interface MonthPillProps {
   item: CalendarItemData
-  onItemClick?: (item: CalendarItemData) => void
+  onItemClick?: (item: CalendarItemData, anchorRect?: DOMRect) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
 }
 
@@ -267,7 +270,8 @@ function MonthPill({ item, onItemClick, onItemDoubleClick }: MonthPillProps) {
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    onItemClick?.(item)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    onItemClick?.(item, rect)
   }
 
   function handleDoubleClick(e: React.MouseEvent) {

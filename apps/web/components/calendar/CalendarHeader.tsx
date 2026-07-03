@@ -30,13 +30,17 @@ interface CalendarHeaderProps {
   onViewChange: (view: CalendarView) => void
   /** Display setting toggles */
   showWeekends?: boolean
+  widenCurrentDay?: boolean
   dimPastEvents?: boolean
   showDeclinedEvents?: boolean
   showCompletedTasks?: boolean
+  mergeDuplicateEvents?: boolean
   onShowWeekendsChange?: (show: boolean) => void
+  onWidenCurrentDayChange?: (widen: boolean) => void
   onDimPastEventsChange?: (dim: boolean) => void
   onShowDeclinedEventsChange?: (show: boolean) => void
   onShowCompletedTasksChange?: (show: boolean) => void
+  onMergeDuplicateEventsChange?: (merge: boolean) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -93,13 +97,17 @@ export function CalendarHeader({
   onNext,
   onViewChange,
   showWeekends,
+  widenCurrentDay,
   dimPastEvents,
   showDeclinedEvents,
   showCompletedTasks,
+  mergeDuplicateEvents,
   onShowWeekendsChange,
+  onWidenCurrentDayChange,
   onDimPastEventsChange,
   onShowDeclinedEventsChange,
   onShowCompletedTasksChange,
+  onMergeDuplicateEventsChange,
 }: CalendarHeaderProps) {
   const settingsButtonRef = React.useRef<HTMLButtonElement>(null)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
@@ -221,9 +229,23 @@ export function CalendarHeader({
             />
 
             <Checkbox
+              label="Widen current day"
+              checked={widenCurrentDay ?? true}
+              onCheckedChange={(checked) => onWidenCurrentDayChange?.(checked)}
+            />
+
+            <Checkbox
               label="Dim past events"
               checked={dimPastEvents ?? true}
               onCheckedChange={(checked) => onDimPastEventsChange?.(checked)}
+            />
+
+            <Checkbox
+              label="Show completed tasks"
+              checked={showCompletedTasks ?? true}
+              onCheckedChange={(checked) =>
+                onShowCompletedTasksChange?.(checked)
+              }
             />
 
             <Checkbox
@@ -235,10 +257,10 @@ export function CalendarHeader({
             />
 
             <Checkbox
-              label="Show completed tasks"
-              checked={showCompletedTasks ?? false}
+              label="Merge duplicate events"
+              checked={mergeDuplicateEvents ?? true}
               onCheckedChange={(checked) =>
-                onShowCompletedTasksChange?.(checked)
+                onMergeDuplicateEventsChange?.(checked)
               }
             />
           </div>

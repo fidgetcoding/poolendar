@@ -20,6 +20,14 @@ import { SubtaskList } from './SubtaskList'
 import { RecurrenceBuilder } from './RecurrenceBuilder'
 import { ReminderEditor } from './ReminderEditor'
 import { RecurrenceEditDialog, type RecurrenceEditScope } from './RecurrenceEditDialog'
+import {
+  IMPORTANCE_OPTIONS,
+  safeFormatDate,
+  fieldClass,
+  SectionDivider,
+  FieldLabel,
+  ToggleGroup,
+} from './item-edit-form-parts'
 
 type EditItemType = 'event' | 'task' | 'routine'
 
@@ -63,9 +71,13 @@ interface ItemEditFormProps {
   onSave: (type: EditItemType, data: Record<string, unknown>, scope?: RecurrenceEditScope) => void
   onDelete?: (scope?: RecurrenceEditScope) => void
   onClose: () => void
+  /** Split the (existing) task's subtasks into standalone tasks (#23d). */
+  onSplit?: () => void
   /** Pre-selected recurrence scope from the preview popover dialog */
   recurrenceScope?: RecurrenceEditScope
 }
+
+export type ItemEditFormInitialData = NonNullable<ItemEditFormProps['initialData']>
 
 const TABS: { value: EditItemType; label: string }[] = [
   { value: 'event', label: 'Event' },
@@ -73,72 +85,6 @@ const TABS: { value: EditItemType; label: string }[] = [
   { value: 'routine', label: 'Routine' },
 ]
 
-const IMPORTANCE_OPTIONS = [
-  { value: 'lowest', label: 'Lowest', color: '#6b7280' },
-  { value: 'low', label: 'Low', color: '#3b82f6' },
-  { value: 'normal', label: 'Normal', color: '#f9a825' },
-  { value: 'high', label: 'High', color: '#f97316' },
-  { value: 'highest', label: 'Highest', color: '#ef4444' },
-] as const
-
-function fieldClass(extra?: string) {
-  return cn(
-    'w-full px-3 py-2 text-sm rounded-md',
-    'bg-[var(--bg)] border border-[var(--border)]',
-    'text-[var(--fg)] placeholder:text-[var(--muted)]',
-    'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 focus:ring-offset-[var(--surface)]',
-    extra
-  )
-}
-
-function SectionDivider() {
-  return <div className="border-t border-[var(--border)] my-4" />
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="block text-xs font-medium text-[var(--muted)] mb-1.5">
-      {children}
-    </label>
-  )
-}
-
-function ToggleGroup({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: string; label: string; icon?: React.ElementType }[]
-  value: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
-      {options.map((opt) => {
-        const active = value === opt.value
-        const Icon = opt.icon
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium',
-              'transition-colors duration-150',
-              'border-l border-[var(--border)] first:border-l-0',
-              active
-                ? 'bg-[var(--accent)] text-[var(--bg)]'
-                : 'text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--surface-hover)]'
-            )}
-          >
-            {Icon && <Icon size={12} />}
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 export function ItemEditForm({
   mode,
@@ -149,6 +95,7 @@ export function ItemEditForm({
   onSave,
   onDelete,
   onClose,
+  onSplit,
   recurrenceScope,
 }: ItemEditFormProps) {
   const [activeTab, setActiveTab] = React.useState<EditItemType>(initialType)
@@ -174,24 +121,16 @@ export function ItemEditForm({
   // Event fields
   const [isAllDay, setIsAllDay] = React.useState(initialData?.is_all_day ?? false)
   const [startDate, setStartDate] = React.useState(
-    initialData?.start_time
-      ? format(new Date(initialData.start_time), 'yyyy-MM-dd')
-      : format(new Date(), 'yyyy-MM-dd')
+    safeFormatDate(initialData?.start_time, 'yyyy-MM-dd', format(new Date(), 'yyyy-MM-dd'))
   )
   const [startTime, setStartTime] = React.useState(
-    initialData?.start_time
-      ? format(new Date(initialData.start_time), 'HH:mm')
-      : '09:00'
+    safeFormatDate(initialData?.start_time, 'HH:mm', '09:00')
   )
   const [endDate, setEndDate] = React.useState(
-    initialData?.end_time
-      ? format(new Date(initialData.end_time), 'yyyy-MM-dd')
-      : format(new Date(), 'yyyy-MM-dd')
+    safeFormatDate(initialData?.end_time, 'yyyy-MM-dd', format(new Date(), 'yyyy-MM-dd'))
   )
   const [endTime, setEndTime] = React.useState(
-    initialData?.end_time
-      ? format(new Date(initialData.end_time), 'HH:mm')
-      : '10:00'
+    safeFormatDate(initialData?.end_time, 'HH:mm', '10:00')
   )
   const [recurrenceRule, setRecurrenceRule] = React.useState<string | null>(
     initialData?.recurrence_rule ?? null
@@ -770,7 +709,11 @@ export function ItemEditForm({
               <SectionDivider />
 
               {/* Subtasks */}
-              <SubtaskList subtasks={subtasks} onChange={setSubtasks} />
+              <SubtaskList
+                subtasks={subtasks}
+                onChange={setSubtasks}
+                onSplit={mode === 'edit' ? onSplit : undefined}
+              />
 
               <SectionDivider />
 

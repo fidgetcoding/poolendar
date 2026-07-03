@@ -17,7 +17,14 @@ const { storage } = vi.hoisted(() => {
   return { storage }
 })
 
-import { useCalendarStore } from '../calendar-store'
+import {
+  useCalendarStore,
+  settingsToCalendarPatch,
+  calendarStateToSettingsPatch,
+  parseHour,
+  type CalendarDisplayPatch,
+} from '../calendar-store'
+import type { UserSettings } from '@poolendar/types'
 
 // ---------------------------------------------------------------------------
 // Reset store between tests
@@ -62,14 +69,24 @@ describe('CalendarStore - Initial state', () => {
     expect(drag.dragItemId).toBeNull()
   })
 
-  it('display settings have correct defaults', () => {
+  it('display settings have correct defaults (PRODUCT.md #5)', () => {
     const state = useCalendarStore.getState()
     expect(state.showWeekends).toBe(true)
-    expect(state.widenCurrentDay).toBe(false)
+    expect(state.widenCurrentDay).toBe(true)
     expect(state.dimPastEvents).toBe(true)
-    expect(state.showCompletedTasks).toBe(false)
+    expect(state.showCompletedTasks).toBe(true)
     expect(state.showDeclinedEvents).toBe(false)
-    expect(state.mergeDuplicateEvents).toBe(false)
+    expect(state.mergeDuplicateEvents).toBe(true)
+  })
+
+  it('time-grid config has correct defaults', () => {
+    const state = useCalendarStore.getState()
+    expect(state.timeGridStart).toBe(0)
+    expect(state.timeGridEnd).toBe(24)
+    expect(state.timeDisplayResolution).toBe(15)
+    expect(state.timeDraggingResolution).toBe(15)
+    expect(state.limitEventsPerDay).toBe(4)
+    expect(state.defaultTaskDuration).toBe(30)
   })
 })
 
@@ -376,6 +393,111 @@ describe('CalendarStore - display settings', () => {
   it('setMergeDuplicateEvents', () => {
     useCalendarStore.getState().setMergeDuplicateEvents(true)
     expect(useCalendarStore.getState().mergeDuplicateEvents).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Time-grid config setters
+// ---------------------------------------------------------------------------
+
+describe('CalendarStore - time-grid config', () => {
+  it('setTimeGrid clamps start/end into range', () => {
+    useCalendarStore.getState().setTimeGrid(8, 20)
+    expect(useCalendarStore.getState().timeGridStart).toBe(8)
+    expect(useCalendarStore.getState().timeGridEnd).toBe(20)
+
+    useCalendarStore.getState().setTimeGrid(-4, 40)
+    expect(useCalendarStore.getState().timeGridStart).toBe(0)
+    expect(useCalendarStore.getState().timeGridEnd).toBe(24)
+  })
+
+  it('setTimeDraggingResolution / setTimeDisplayResolution clamp', () => {
+    useCalendarStore.getState().setTimeDraggingResolution(30)
+    expect(useCalendarStore.getState().timeDraggingResolution).toBe(30)
+    useCalendarStore.getState().setTimeDisplayResolution(1)
+    expect(useCalendarStore.getState().timeDisplayResolution).toBe(5)
+  })
+
+  it('setLimitEventsPerDay / setDefaultTaskDuration', () => {
+    useCalendarStore.getState().setLimitEventsPerDay(2)
+    expect(useCalendarStore.getState().limitEventsPerDay).toBe(2)
+    useCalendarStore.getState().setDefaultTaskDuration(45)
+    expect(useCalendarStore.getState().defaultTaskDuration).toBe(45)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Settings <-> store mapping + hydration round-trip
+// ---------------------------------------------------------------------------
+
+const FULL_SETTINGS: Partial<UserSettings> = {
+  show_weekends: false,
+  widen_current_day: false,
+  dim_past_events: false,
+  show_completed_tasks: false,
+  show_declined_events: true,
+  merge_duplicate_events: false,
+  time_grid_start: '07:00',
+  time_grid_end: '21:00',
+  time_display_resolution: 30,
+  time_drag_resolution: 10,
+  limit_events_per_day: 6,
+  default_task_duration_minutes: 45,
+}
+
+describe('CalendarStore - settings mapping', () => {
+  it('parseHour extracts the hour from HH:mm', () => {
+    expect(parseHour('07:30')).toBe(7)
+    expect(parseHour('00:00')).toBe(0)
+    expect(parseHour(null)).toBeNull()
+    expect(parseHour('garbage')).toBeNull()
+  })
+
+  it('settingsToCalendarPatch maps every field', () => {
+    const patch = settingsToCalendarPatch(FULL_SETTINGS)
+    expect(patch.showWeekends).toBe(false)
+    expect(patch.showDeclinedEvents).toBe(true)
+    expect(patch.mergeDuplicateEvents).toBe(false)
+    expect(patch.timeGridStart).toBe(7)
+    expect(patch.timeGridEnd).toBe(21)
+    expect(patch.timeDisplayResolution).toBe(30)
+    expect(patch.timeDraggingResolution).toBe(10)
+    expect(patch.limitEventsPerDay).toBe(6)
+    expect(patch.defaultTaskDuration).toBe(45)
+  })
+
+  it('treats an end that parses <= start as next-day (24)', () => {
+    const patch = settingsToCalendarPatch({
+      time_grid_start: '00:00',
+      time_grid_end: '00:00',
+    })
+    expect(patch.timeGridStart).toBe(0)
+    expect(patch.timeGridEnd).toBe(24)
+  })
+
+  it('only applies present fields', () => {
+    const patch = settingsToCalendarPatch({ show_weekends: false })
+    expect(patch.showWeekends).toBe(false)
+    expect(patch.timeGridStart).toBeUndefined()
+    expect(patch.limitEventsPerDay).toBeUndefined()
+  })
+
+  it('hydrateFromSettings then write-back round-trips', () => {
+    useCalendarStore.getState().hydrateFromSettings(FULL_SETTINGS)
+    const state = useCalendarStore.getState()
+    expect(state.showDeclinedEvents).toBe(true)
+    expect(state.timeGridStart).toBe(7)
+    expect(state.timeGridEnd).toBe(21)
+    expect(state.limitEventsPerDay).toBe(6)
+
+    const back = calendarStateToSettingsPatch(state as CalendarDisplayPatch)
+    expect(back.show_weekends).toBe(false)
+    expect(back.show_declined_events).toBe(true)
+    expect(back.time_grid_start).toBe('07:00')
+    expect(back.time_grid_end).toBe('21:00')
+    expect(back.time_display_resolution).toBe(30)
+    expect(back.limit_events_per_day).toBe(6)
+    expect(back.default_task_duration_minutes).toBe(45)
   })
 })
 

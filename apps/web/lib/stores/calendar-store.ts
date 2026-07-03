@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { addDays, addMonths, subMonths, format } from 'date-fns'
+import type { UserSettings } from '@poolendar/types'
 
 type CalendarView = 'day' | 'week' | 'month' | '2weeks' | 'custom'
 
@@ -51,6 +52,14 @@ interface CalendarState {
   showDeclinedEvents: boolean
   mergeDuplicateEvents: boolean
 
+  // Time-grid config sourced from profile.settings (#6, #8, #9a, #14)
+  timeGridStart: number // hour 0-24
+  timeGridEnd: number // hour 0-24
+  timeDisplayResolution: number // minutes
+  timeDraggingResolution: number // minutes
+  limitEventsPerDay: number
+  defaultTaskDuration: number // minutes
+
   // Drag state
   drag: DragState
 
@@ -75,6 +84,12 @@ interface CalendarState {
   setShowCompletedTasks: (show: boolean) => void
   setShowDeclinedEvents: (show: boolean) => void
   setMergeDuplicateEvents: (merge: boolean) => void
+  setTimeGrid: (startHour: number, endHour: number) => void
+  setTimeDisplayResolution: (minutes: number) => void
+  setTimeDraggingResolution: (minutes: number) => void
+  setLimitEventsPerDay: (n: number) => void
+  setDefaultTaskDuration: (minutes: number) => void
+  hydrateFromSettings: (settings: Partial<UserSettings>) => void
   startDrag: (drag: Omit<DragState, 'isDragging'>) => void
   updateDrag: (time: string, date: string) => void
   endDrag: () => void
@@ -129,13 +144,21 @@ export const useCalendarStore = create<CalendarState>()(
       // Zoom
       hourHeight: 60,
 
-      // Display settings
+      // Display settings — defaults per PRODUCT.md #5
       showWeekends: true,
-      widenCurrentDay: false,
+      widenCurrentDay: true,
       dimPastEvents: true,
-      showCompletedTasks: false,
+      showCompletedTasks: true,
       showDeclinedEvents: false,
-      mergeDuplicateEvents: false,
+      mergeDuplicateEvents: true,
+
+      // Time-grid config defaults (#68)
+      timeGridStart: 0,
+      timeGridEnd: 24,
+      timeDisplayResolution: 15,
+      timeDraggingResolution: 15,
+      limitEventsPerDay: 4,
+      defaultTaskDuration: 30,
 
       // Drag state
       drag: { ...initialDragState },
@@ -210,6 +233,23 @@ export const useCalendarStore = create<CalendarState>()(
       setShowDeclinedEvents: (show) => set({ showDeclinedEvents: show }),
       setMergeDuplicateEvents: (merge) => set({ mergeDuplicateEvents: merge }),
 
+      setTimeGrid: (startHour, endHour) =>
+        set({
+          timeGridStart: Math.max(0, Math.min(23, Math.floor(startHour))),
+          timeGridEnd: Math.max(1, Math.min(24, Math.ceil(endHour))),
+        }),
+      setTimeDisplayResolution: (minutes) =>
+        set({ timeDisplayResolution: Math.max(5, Math.min(60, minutes)) }),
+      setTimeDraggingResolution: (minutes) =>
+        set({ timeDraggingResolution: Math.max(5, Math.min(60, minutes)) }),
+      setLimitEventsPerDay: (n) =>
+        set({ limitEventsPerDay: Math.max(1, Math.min(20, Math.floor(n))) }),
+      setDefaultTaskDuration: (minutes) =>
+        set({ defaultTaskDuration: Math.max(5, minutes) }),
+
+      hydrateFromSettings: (settings) =>
+        set(settingsToCalendarPatch(settings)),
+
       startDrag: (drag) => set({ drag: { ...drag, isDragging: true } }),
 
       updateDrag: (time, date) =>
@@ -231,7 +271,104 @@ export const useCalendarStore = create<CalendarState>()(
         showCompletedTasks: state.showCompletedTasks,
         showDeclinedEvents: state.showDeclinedEvents,
         mergeDuplicateEvents: state.mergeDuplicateEvents,
+        timeGridStart: state.timeGridStart,
+        timeGridEnd: state.timeGridEnd,
+        timeDisplayResolution: state.timeDisplayResolution,
+        timeDraggingResolution: state.timeDraggingResolution,
+        limitEventsPerDay: state.limitEventsPerDay,
+        defaultTaskDuration: state.defaultTaskDuration,
       }),
     }
   )
 )
+
+// ---------------------------------------------------------------------------
+// Settings <-> calendar-store mapping (pure, testable)
+//
+// profile.settings (UserSettings) is the single source of truth (#68). These
+// helpers translate between the persisted settings shape and the store's
+// display/time slice so hydration and write-back stay symmetric.
+// ---------------------------------------------------------------------------
+
+export interface CalendarDisplayPatch {
+  showWeekends: boolean
+  widenCurrentDay: boolean
+  dimPastEvents: boolean
+  showCompletedTasks: boolean
+  showDeclinedEvents: boolean
+  mergeDuplicateEvents: boolean
+  timeGridStart: number
+  timeGridEnd: number
+  timeDisplayResolution: number
+  timeDraggingResolution: number
+  limitEventsPerDay: number
+  defaultTaskDuration: number
+}
+
+/** Parse an "HH:mm" (or "HH:mm:ss") time string into an integer hour. */
+export function parseHour(value: string | null | undefined): number | null {
+  if (!value) return null
+  const match = /^(\d{1,2}):(\d{2})/.exec(value)
+  if (!match) return null
+  const h = parseInt(match[1]!, 10)
+  if (Number.isNaN(h)) return null
+  return h
+}
+
+/** Serialize an integer hour back into an "HH:mm" string (24 -> "00:00"). */
+export function hourToTimeString(hour: number): string {
+  const h = hour >= 24 ? 0 : hour
+  return `${String(h).padStart(2, '0')}:00`
+}
+
+/**
+ * Translate the persisted UserSettings into a partial store patch. Only the
+ * fields present in `settings` are applied; the rest keep their defaults.
+ */
+export function settingsToCalendarPatch(
+  settings: Partial<UserSettings>
+): Partial<CalendarDisplayPatch> {
+  const patch: Partial<CalendarDisplayPatch> = {}
+
+  if (settings.show_weekends !== undefined) patch.showWeekends = settings.show_weekends
+  if (settings.widen_current_day !== undefined) patch.widenCurrentDay = settings.widen_current_day
+  if (settings.dim_past_events !== undefined) patch.dimPastEvents = settings.dim_past_events
+  if (settings.show_completed_tasks !== undefined) patch.showCompletedTasks = settings.show_completed_tasks
+  if (settings.show_declined_events !== undefined) patch.showDeclinedEvents = settings.show_declined_events
+  if (settings.merge_duplicate_events !== undefined) patch.mergeDuplicateEvents = settings.merge_duplicate_events
+
+  const startHour = parseHour(settings.time_grid_start)
+  if (startHour !== null) patch.timeGridStart = startHour
+  const endHour = parseHour(settings.time_grid_end)
+  if (endHour !== null) {
+    // An end that parses at/below the start means "next day" (e.g. "00:00").
+    patch.timeGridEnd = endHour <= (patch.timeGridStart ?? 0) ? 24 : endHour
+  }
+
+  if (settings.time_display_resolution !== undefined) patch.timeDisplayResolution = settings.time_display_resolution
+  if (settings.time_drag_resolution !== undefined) patch.timeDraggingResolution = settings.time_drag_resolution
+  if (settings.limit_events_per_day !== undefined) patch.limitEventsPerDay = settings.limit_events_per_day
+  if (settings.default_task_duration_minutes !== undefined) patch.defaultTaskDuration = settings.default_task_duration_minutes
+
+  return patch
+}
+
+/** Translate the store's display/time slice back into a UserSettings patch. */
+export function calendarStateToSettingsPatch(
+  state: CalendarDisplayPatch
+): Partial<UserSettings> {
+  return {
+    show_weekends: state.showWeekends,
+    widen_current_day: state.widenCurrentDay,
+    dim_past_events: state.dimPastEvents,
+    show_completed_tasks: state.showCompletedTasks,
+    show_declined_events: state.showDeclinedEvents,
+    merge_duplicate_events: state.mergeDuplicateEvents,
+    time_grid_start: hourToTimeString(state.timeGridStart),
+    time_grid_end: hourToTimeString(state.timeGridEnd),
+    time_display_resolution: state.timeDisplayResolution,
+    time_drag_resolution: state.timeDraggingResolution,
+    limit_events_per_day: state.limitEventsPerDay,
+    default_task_duration_minutes: state.defaultTaskDuration,
+  }
+}

@@ -1,0 +1,77 @@
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import type { Calendar } from '@poolendar/types'
+
+// ---------------------------------------------------------------------------
+// Query-key factory
+// ---------------------------------------------------------------------------
+
+export const calendarKeys = {
+  all: ['calendars'] as const,
+  list: () => [...calendarKeys.all, 'list'] as const,
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/calendars response shape — accounts grouped with sub-calendars
+// ---------------------------------------------------------------------------
+
+export interface CalendarAccountGroup {
+  id: string
+  email: string
+  token_expires_at: string
+  sync_token: string | null
+  last_synced_at: string | null
+  created_at: string
+  calendars: Calendar[]
+}
+
+interface CalendarsResponse {
+  accounts: CalendarAccountGroup[]
+}
+
+/**
+ * Flatten the account-grouped response into a single list of sub-calendars.
+ * Pure so it can be unit-tested without the network.
+ */
+export function flattenCalendars(
+  accounts: CalendarAccountGroup[] | undefined | null
+): Calendar[] {
+  return (accounts ?? []).flatMap((account) => account.calendars ?? [])
+}
+
+// ---------------------------------------------------------------------------
+// useCalendars — flat list of every connected sub-calendar
+// ---------------------------------------------------------------------------
+
+export function useCalendars() {
+  return useQuery({
+    queryKey: calendarKeys.list(),
+    queryFn: async (): Promise<Calendar[]> => {
+      const res = await fetch('/api/calendars')
+      if (!res.ok) {
+        throw new Error(`Failed to load calendars (${res.status})`)
+      }
+      const json = (await res.json()) as CalendarsResponse
+      return flattenCalendars(json.accounts)
+    },
+  })
+}
+
+/**
+ * useCalendarAccounts — the account-grouped response, for settings and the
+ * account panel where the email → sub-calendar grouping matters.
+ */
+export function useCalendarAccounts() {
+  return useQuery({
+    queryKey: [...calendarKeys.all, 'accounts'] as const,
+    queryFn: async (): Promise<CalendarAccountGroup[]> => {
+      const res = await fetch('/api/calendars')
+      if (!res.ok) {
+        throw new Error(`Failed to load calendars (${res.status})`)
+      }
+      const json = (await res.json()) as CalendarsResponse
+      return json.accounts ?? []
+    },
+  })
+}

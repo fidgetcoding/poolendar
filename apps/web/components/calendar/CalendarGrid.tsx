@@ -11,47 +11,51 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import {
-  format,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  startOfDay,
-  endOfDay,
-  eachDayOfInterval,
-  isToday,
-  getDay,
-  getISOWeek,
-  parseISO,
-  setHours,
-  setMinutes,
-} from 'date-fns'
+import { format, isToday, getDay, getISOWeek } from 'date-fns'
 import { cn } from '@/lib/utils'
-import type {
-  CalendarEvent,
-  Task,
-  Routine,
-  Calendar,
-} from '@poolendar/types'
+import type { CalendarEvent, Task, Routine, Calendar } from '@poolendar/types'
 import type { CalendarItemData, CalendarItemType } from './calendar-types'
 import { TimeColumn } from './TimeColumn'
 import { DayColumn } from './DayColumn'
 import { CalendarDragOverlay } from './CalendarDragOverlay'
 import { MonthGrid } from './MonthGrid'
 import { NewItemPopover } from './NewItemPopover'
+import { eventsToItems, tasksToItems, routinesToItems } from './grid-items'
+import {
+  getVisibleDays,
+  filterWeekends,
+  isAllDayRowItem,
+  clampItemToDay,
+  itemOverlapsDay,
+  mergeDuplicateEventItems,
+  isDeclinedEvent,
+  type GridView,
+} from './grid-helpers'
 import { useUIStore } from '@/lib/stores/ui-store'
 
 interface CalendarGridProps {
-  view: 'day' | 'week' | 'month'
+  view: GridView
   currentDate: Date
+  customDays?: number
   events: CalendarEvent[]
   tasks: Task[]
   routines: Routine[]
   calendars: Calendar[]
   hourHeight?: number
+  startHour?: number
+  endHour?: number
+  draggingResolution?: number
+  limitPerDay?: number
+  widenCurrentDay?: boolean
+  dimPastEvents?: boolean
+  showWeekends?: boolean
+  showCompletedTasks?: boolean
+  showDeclinedEvents?: boolean
+  mergeDuplicateEvents?: boolean
   showWeekNumbers?: boolean
-  onItemClick?: (item: CalendarItemData) => void
+  /** Connected-account emails — used to detect declined events (#5). */
+  selfEmails?: string[]
+  onItemClick?: (item: CalendarItemData, anchorRect?: DOMRect) => void
   onItemDoubleClick?: (item: CalendarItemData) => void
   onTimeSlotClick?: (date: Date, time: Date) => void
   onItemReschedule?: (
@@ -65,193 +69,57 @@ interface CalendarGridProps {
     itemType: CalendarItemType,
     newEnd: Date
   ) => void
-  onQuickCreate?: (title: string, type: CalendarItemType, startTime: Date) => void
+  onQuickCreate?: (
+    title: string,
+    type: CalendarItemType,
+    startTime: Date,
+    endTime?: Date
+  ) => void
+  onOpenFullForm?: (
+    type: CalendarItemType,
+    date: Date,
+    startTime: Date,
+    endTime?: Date
+  ) => void
   onRoutineCheckboxClick?: (item: CalendarItemData) => void
+  onTaskCheckboxClick?: (item: CalendarItemData) => void
 }
 
 const DEFAULT_HOUR_HEIGHT = 60
 const SCROLL_TO_HOUR = 8
-
-function getCalendarColor(
-  calendars: Calendar[],
-  calendarId: string | null,
-  colorOverride: string | null
-): string {
-  if (colorOverride) return colorOverride
-  if (calendarId) {
-    const cal = calendars.find((c) => c.id === calendarId)
-    if (cal) return cal.color
-  }
-  return '#f9a825'
-}
-
-function eventsToItems(
-  events: CalendarEvent[],
-  calendars: Calendar[]
-): CalendarItemData[] {
-  return events
-    .filter((e) => e.status !== 'cancelled')
-    .map((event) => ({
-      id: event.id,
-      type: 'event' as const,
-      title: event.title,
-      startTime: parseISO(event.start_time),
-      endTime: parseISO(event.end_time),
-      color: getCalendarColor(calendars, event.calendar_id, event.color_override),
-      isAllDay: event.is_all_day,
-      location: event.location,
-      event,
-    }))
-}
-
-function tasksToItems(
-  tasks: Task[],
-  calendars: Calendar[]
-): CalendarItemData[] {
-  return tasks
-    .filter((t) => t.scheduled_start && t.scheduled_end)
-    .map((task) => {
-      let subtaskProgress: { completed: number; total: number } | null = null
-      if (task.subtasks && task.subtasks.length > 0) {
-        subtaskProgress = {
-          completed: task.subtasks.filter((s) => s.completed).length,
-          total: task.subtasks.length,
-        }
-      }
-
-      return {
-        id: task.id,
-        type: 'task' as const,
-        title: task.title,
-        startTime: parseISO(task.scheduled_start!),
-        endTime: parseISO(task.scheduled_end!),
-        color: getCalendarColor(calendars, task.calendar_id, null),
-        location: task.location,
-        task,
-        subtaskProgress,
-      }
-    })
-}
-
-function routinesToItems(
-  routines: Routine[],
-  visibleDays: Date[],
-  calendars: Calendar[]
-): CalendarItemData[] {
-  const items: CalendarItemData[] = []
-  const dayMap: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 }
-
-  for (const routine of routines) {
-    const routineStartParts = routine.start_time.split('T')
-    const routineEndParts = routine.end_time.split('T')
-
-    let startHour = 9
-    let startMinute = 0
-    let endHour = 10
-    let endMinute = 0
-
-    if (routineStartParts.length > 1) {
-      const timeParts = routineStartParts[1]!.split(':')
-      startHour = parseInt(timeParts[0] ?? '0', 10) || 0
-      startMinute = parseInt(timeParts[1] ?? '0', 10) || 0
-    }
-    if (routineEndParts.length > 1) {
-      const timeParts = routineEndParts[1]!.split(':')
-      endHour = parseInt(timeParts[0] ?? '0', 10) || 0
-      endMinute = parseInt(timeParts[1] ?? '0', 10) || 0
-    }
-
-    // Parse BYDAY from recurrence rule if present
-    let allowedDays: number[] | null = null
-    if (routine.recurrence_rule) {
-      const byDayMatch = routine.recurrence_rule.match(/BYDAY=([A-Z,]+)/)
-      if (byDayMatch) {
-        allowedDays = byDayMatch[1]!.split(',').map(d => dayMap[d]).filter((d): d is number => d !== undefined)
-      }
-      // FREQ=DAILY means all days
-      if (routine.recurrence_rule.includes('FREQ=DAILY')) {
-        allowedDays = null
-      }
-    }
-
-    for (const day of visibleDays) {
-      // Skip days not in BYDAY
-      if (allowedDays && !allowedDays.includes(day.getDay())) continue
-
-      const startTime = setMinutes(setHours(new Date(day), startHour), startMinute)
-      startTime.setSeconds(0, 0)
-      const endTime = setMinutes(setHours(new Date(day), endHour), endMinute)
-      endTime.setSeconds(0, 0)
-
-      items.push({
-        id: `${routine.id}-${format(day, 'yyyy-MM-dd')}`,
-        type: 'routine',
-        title: routine.title,
-        startTime,
-        endTime,
-        color: getCalendarColor(calendars, routine.calendar_id, null),
-        location: routine.location,
-        routine,
-      })
-    }
-  }
-
-  return items
-}
-
-function getVisibleDays(
-  currentDate: Date,
-  view: 'day' | 'week' | 'month'
-): Date[] {
-  switch (view) {
-    case 'day':
-      return [currentDate]
-    case 'week': {
-      const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 })
-      const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 })
-      return eachDayOfInterval({ start: weekStart, end: weekEnd })
-    }
-    case 'month': {
-      const monthStart = startOfMonth(currentDate)
-      const monthEnd = endOfMonth(currentDate)
-      const calStart = startOfWeek(monthStart, { weekStartsOn: 0 })
-      const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
-      return eachDayOfInterval({ start: calStart, end: calEnd })
-    }
-  }
-}
-
-function getItemsForDay(
-  items: CalendarItemData[],
-  day: Date,
-  allDay = false
-): CalendarItemData[] {
-  return items.filter((item) => {
-    if (allDay !== !!item.isAllDay) return false
-    const dayStart = startOfDay(day)
-    const dayEnd = endOfDay(day)
-    return item.startTime < dayEnd && item.endTime > dayStart
-  })
-}
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export function CalendarGrid({
   view,
   currentDate,
+  customDays = 3,
   events,
   tasks,
   routines,
   calendars,
   hourHeight = DEFAULT_HOUR_HEIGHT,
+  startHour = 0,
+  endHour = 24,
+  draggingResolution = 15,
+  limitPerDay,
+  widenCurrentDay = false,
+  dimPastEvents = false,
+  showWeekends = true,
+  showCompletedTasks = true,
+  showDeclinedEvents = false,
+  mergeDuplicateEvents = false,
   showWeekNumbers = false,
+  selfEmails = [],
   onItemClick,
   onItemDoubleClick,
   onTimeSlotClick,
   onItemReschedule,
   onItemResize,
   onQuickCreate,
+  onOpenFullForm,
   onRoutineCheckboxClick,
+  onTaskCheckboxClick,
 }: CalendarGridProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const [activeItem, setActiveItem] = React.useState<Active | null>(null)
@@ -263,10 +131,8 @@ export function CalendarGrid({
   } | null>(null)
   const uiStore = useUIStore()
 
-  // Context menu handler for the calendar grid background
   function handleGridContextMenu(e: React.MouseEvent) {
     e.preventDefault()
-    // Check if the right-click was on a calendar item
     const itemEl = (e.target as HTMLElement).closest('[data-calendar-item]')
     if (itemEl) {
       const itemId = itemEl.getAttribute('data-item-id') ?? undefined
@@ -276,7 +142,6 @@ export function CalendarGrid({
         return
       }
     }
-    // Empty slot: open context menu with no item (for creating new items)
     uiStore.openContextMenu(null, null, { x: e.clientX, y: e.clientY })
   }
 
@@ -288,25 +153,63 @@ export function CalendarGrid({
   })
   const sensors = useSensors(mouseSensor, touchSensor)
 
-  const visibleDays = React.useMemo(
-    () => getVisibleDays(currentDate, view),
-    [currentDate, view]
-  )
+  const visibleDays = React.useMemo(() => {
+    const raw = getVisibleDays(currentDate, view, customDays)
+    // Weekend hiding only applies to multi-day, non-month layouts (month keeps
+    // its fixed 7-column grid).
+    if (!showWeekends && view !== 'day' && view !== 'month') {
+      return filterWeekends(raw)
+    }
+    return raw
+  }, [currentDate, view, customDays, showWeekends])
 
   const allItems = React.useMemo(() => {
-    const eventItems = eventsToItems(events, calendars)
-    const taskItems = tasksToItems(tasks, calendars)
+    let eventItems = eventsToItems(events, calendars)
+    if (!showDeclinedEvents) {
+      eventItems = eventItems.filter(
+        (i) => !(i.event && isDeclinedEvent(i.event, selfEmails))
+      )
+    }
+
+    let taskItems = tasksToItems(tasks, calendars)
+    if (!showCompletedTasks) {
+      taskItems = taskItems.filter((i) => i.task?.status !== 'done')
+    }
+
     const routineItems = routinesToItems(routines, visibleDays, calendars)
-    return [...eventItems, ...taskItems, ...routineItems]
-  }, [events, tasks, routines, calendars, visibleDays])
+
+    let combined = [...eventItems, ...taskItems, ...routineItems]
+    if (mergeDuplicateEvents) {
+      combined = mergeDuplicateEventItems(combined)
+    }
+    return combined
+  }, [
+    events,
+    tasks,
+    routines,
+    calendars,
+    visibleDays,
+    showDeclinedEvents,
+    showCompletedTasks,
+    mergeDuplicateEvents,
+    selfEmails,
+  ])
+
+  const allDayRowItems = React.useMemo(
+    () => allItems.filter(isAllDayRowItem),
+    [allItems]
+  )
+  const timedItems = React.useMemo(
+    () => allItems.filter((i) => !isAllDayRowItem(i)),
+    [allItems]
+  )
 
   React.useEffect(() => {
     if (view === 'month') return
     if (!scrollRef.current) return
-
-    const scrollTarget = SCROLL_TO_HOUR * hourHeight
+    const scrollTarget = Math.max(0, SCROLL_TO_HOUR - startHour) * hourHeight
     scrollRef.current.scrollTop = scrollTarget
-  }, [view, hourHeight, currentDate])
+  }, [view, hourHeight, currentDate, startHour])
 
   function handleDragStart(event: DragStartEvent) {
     setActiveItem(event.active)
@@ -330,10 +233,14 @@ export function CalendarGrid({
     let newHours = draggedItem.startTime.getHours()
     let newMinutes = draggedItem.startTime.getMinutes()
 
-    // Use the drag delta Y to calculate time offset
     if (event.delta) {
-      const deltaMinutes = Math.round((event.delta.y / hourHeight) * 60 / 15) * 15
-      const totalMinutes = draggedItem.startTime.getHours() * 60 + draggedItem.startTime.getMinutes() + deltaMinutes
+      const deltaMinutes =
+        Math.round((event.delta.y / hourHeight) * 60 / draggingResolution) *
+        draggingResolution
+      const totalMinutes =
+        draggedItem.startTime.getHours() * 60 +
+        draggedItem.startTime.getMinutes() +
+        deltaMinutes
       newHours = Math.max(0, Math.min(23, Math.floor(totalMinutes / 60)))
       newMinutes = Math.max(0, totalMinutes % 60)
     }
@@ -353,7 +260,7 @@ export function CalendarGrid({
     const el = scrollRef.current
     if (!el) return
 
-    const top = (time.getHours() + time.getMinutes() / 60) * hourHeight
+    const top = (time.getHours() + time.getMinutes() / 60 - startHour) * hourHeight
     const rect = el.getBoundingClientRect()
     const anchorRect = new DOMRect(
       rect.left + rect.width / 2,
@@ -369,15 +276,27 @@ export function CalendarGrid({
     setPopoverState(null)
   }
 
-  function handleQuickCreate(title: string, type: 'event' | 'task') {
+  function handleQuickCreate(title: string, type: CalendarItemType) {
     if (title.trim() && popoverState) {
-      onQuickCreate?.(title.trim(), type, popoverState.startTime)
+      onQuickCreate?.(title.trim(), type, popoverState.startTime, popoverState.endTime)
     }
     setPopoverState(null)
   }
 
-  function handleOpenFullForm(title: string, type: 'event' | 'task') {
+  function handleOpenFullForm(_title: string, type: CalendarItemType) {
+    if (popoverState) {
+      onOpenFullForm?.(
+        type,
+        popoverState.date,
+        popoverState.startTime,
+        popoverState.endTime
+      )
+    }
     setPopoverState(null)
+  }
+
+  function dayFlexGrow(day: Date): number {
+    return widenCurrentDay && isToday(day) ? 1.6 : 1
   }
 
   if (view === 'month') {
@@ -387,13 +306,16 @@ export function CalendarGrid({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <MonthGrid
-          currentDate={currentDate}
-          visibleDays={visibleDays}
-          items={allItems}
-          onItemClick={onItemClick}
-          onItemDoubleClick={onItemDoubleClick}
-        />
+        <div onContextMenu={handleGridContextMenu} className="flex flex-col flex-1 overflow-hidden">
+          <MonthGrid
+            currentDate={currentDate}
+            visibleDays={visibleDays}
+            items={allItems}
+            limitPerDay={limitPerDay}
+            onItemClick={onItemClick}
+            onItemDoubleClick={onItemDoubleClick}
+          />
+        </div>
         <CalendarDragOverlay active={activeItem} />
       </DndContext>
     )
@@ -406,26 +328,38 @@ export function CalendarGrid({
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col flex-1 overflow-hidden" onContextMenu={handleGridContextMenu}>
-        {view === 'week' && (
-          <WeekHeader days={visibleDays} showWeekNumbers={showWeekNumbers} />
-        )}
+        <WeekHeader
+          days={visibleDays}
+          showWeekNumbers={showWeekNumbers}
+          widenCurrentDay={widenCurrentDay}
+        />
 
-        {/* All-day events row */}
+        {/* All-day / multi-day events row (#15d) */}
         <div className="flex border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="shrink-0 w-10 md:w-[60px] px-1 md:px-2 py-1 text-[10px] md:text-[11px] text-[var(--muted)]">
             all-day
           </div>
           <div className="flex flex-1">
             {visibleDays.map((day) => {
-              const allDayItems = getItemsForDay(allItems, day, true)
+              const dayAllDay = allDayRowItems.filter((item) => itemOverlapsDay(item, day))
               return (
-                <div key={day.toISOString()} className="flex-1 min-h-[28px] p-1 border-l" style={{ borderColor: 'var(--border)' }}>
-                  {allDayItems.map((item) => (
+                <div
+                  key={day.toISOString()}
+                  className="min-w-0 min-h-[28px] p-1 border-l"
+                  style={{ borderColor: 'var(--border)', flexGrow: dayFlexGrow(day), flexBasis: 0 }}
+                >
+                  {dayAllDay.map((item) => (
                     <div
                       key={item.id}
+                      data-calendar-item
+                      data-item-id={item.id}
+                      data-item-type={item.type}
                       className="text-xs px-2 py-0.5 rounded mb-0.5 cursor-pointer truncate"
                       style={{ backgroundColor: item.color || 'var(--accent)', color: '#fff' }}
-                      onClick={() => onItemClick?.(item)}
+                      onClick={(e) =>
+                        onItemClick?.(item, (e.currentTarget as HTMLElement).getBoundingClientRect())
+                      }
+                      onDoubleClick={() => onItemDoubleClick?.(item)}
                     >
                       {item.title}
                     </div>
@@ -441,22 +375,35 @@ export function CalendarGrid({
           className="flex-1 overflow-y-auto overflow-x-hidden"
         >
           <div className="flex min-h-0">
-            <TimeColumn hourHeight={hourHeight} />
+            <TimeColumn hourHeight={hourHeight} startHour={startHour} endHour={endHour} />
 
             {visibleDays.map((day) => {
-              const dayItems = getItemsForDay(allItems, day, false)
+              const dayItems = timedItems
+                .filter((item) => itemOverlapsDay(item, day))
+                .map((item) => clampItemToDay(item, day))
               return (
-                <DayColumn
+                <div
                   key={day.toISOString()}
-                  date={day}
-                  items={dayItems}
-                  hourHeight={hourHeight}
-                  isToday={isToday(day)}
-                  onTimeSlotClick={handleTimeSlotClick}
-                  onItemClick={onItemClick}
-                  onItemDoubleClick={onItemDoubleClick}
-                  onRoutineCheckboxClick={onRoutineCheckboxClick}
-                />
+                  className="flex min-w-0"
+                  style={{ flexGrow: dayFlexGrow(day), flexBasis: 0 }}
+                >
+                  <DayColumn
+                    date={day}
+                    items={dayItems}
+                    hourHeight={hourHeight}
+                    startHour={startHour}
+                    endHour={endHour}
+                    draggingResolution={draggingResolution}
+                    dimPastEvents={dimPastEvents}
+                    isToday={isToday(day)}
+                    onTimeSlotClick={handleTimeSlotClick}
+                    onItemClick={onItemClick}
+                    onItemDoubleClick={onItemDoubleClick}
+                    onItemResize={onItemResize}
+                    onRoutineCheckboxClick={onRoutineCheckboxClick}
+                    onTaskCheckboxClick={onTaskCheckboxClick}
+                  />
+                </div>
               )
             })}
           </div>
@@ -487,10 +434,10 @@ export function CalendarGrid({
 interface WeekHeaderProps {
   days: Date[]
   showWeekNumbers?: boolean
+  widenCurrentDay?: boolean
 }
 
-function WeekHeader({ days, showWeekNumbers = false }: WeekHeaderProps) {
-  // Compute ISO week number from the first day of the visible week
+function WeekHeader({ days, showWeekNumbers = false, widenCurrentDay = false }: WeekHeaderProps) {
   const weekNumber = days.length > 0 ? getISOWeek(days[0]!) : null
 
   return (
@@ -515,9 +462,10 @@ function WeekHeader({ days, showWeekNumbers = false }: WeekHeaderProps) {
           <div
             key={day.toISOString()}
             className={cn(
-              'flex-1 min-w-0 flex flex-col items-center py-2',
+              'min-w-0 flex flex-col items-center py-2',
               'border-l border-[var(--border)]'
             )}
+            style={{ flexGrow: widenCurrentDay && today ? 1.6 : 1, flexBasis: 0 }}
           >
             <span
               className={cn(
@@ -545,4 +493,3 @@ function WeekHeader({ days, showWeekNumbers = false }: WeekHeaderProps) {
     </div>
   )
 }
-

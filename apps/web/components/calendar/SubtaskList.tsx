@@ -17,7 +17,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Plus, X } from 'lucide-react'
+import { GripVertical, Plus, X, Scissors } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface SubtaskItem {
@@ -30,6 +30,8 @@ interface SubtaskItem {
 interface SubtaskListProps {
   subtasks: SubtaskItem[]
   onChange: (subtasks: SubtaskItem[]) => void
+  /** Promote subtasks to independent tasks (#23d). Omitted in create mode. */
+  onSplit?: () => void
 }
 
 function generateId(): string {
@@ -181,7 +183,7 @@ function SortableSubtaskRow({
   )
 }
 
-export function SubtaskList({ subtasks, onChange }: SubtaskListProps) {
+export function SubtaskList({ subtasks, onChange, onSplit }: SubtaskListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor)
@@ -299,6 +301,23 @@ export function SubtaskList({ subtasks, onChange }: SubtaskListProps) {
         <Plus size={14} />
         <span>Add subtask</span>
       </button>
+
+      {onSplit && totalCount > 0 && (
+        <button
+          type="button"
+          onClick={onSplit}
+          className={cn(
+            'flex items-center gap-1.5 w-full px-3 py-2 rounded-md',
+            'text-sm text-[var(--muted)] hover:text-[var(--fg)]',
+            'border border-dashed border-[var(--border)]',
+            'hover:border-[var(--accent)]',
+            'transition-colors duration-150'
+          )}
+        >
+          <Scissors size={14} />
+          <span>Split into separate tasks</span>
+        </button>
+      )}
     </div>
   )
 }
