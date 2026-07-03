@@ -98,6 +98,23 @@ export async function POST(request: NextRequest) {
 
   const { tag_ids, subtasks, ...input } = parsed.data
 
+  // Cross-tenant guard: reject unknown/foreign tag ids before creating anything.
+  if (tag_ids.length > 0) {
+    const { data: ownedTags } = await supabase
+      .from('tags')
+      .select('id')
+      .eq('user_id', userId)
+      .in('id', tag_ids)
+    const ownedIds = new Set((ownedTags ?? []).map((t) => t.id))
+    const invalid = tag_ids.filter((tid) => !ownedIds.has(tid))
+    if (invalid.length > 0) {
+      return NextResponse.json(
+        { error: 'One or more tag_ids do not belong to you', invalid_tag_ids: invalid },
+        { status: 400 }
+      )
+    }
+  }
+
   const taskRow = {
     user_id: userId,
     title: input.title,

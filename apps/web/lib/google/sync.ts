@@ -8,11 +8,12 @@ import {
   updateGoogleEvent,
   deleteGoogleEvent,
 } from './calendar'
+import { requireEnv } from '../env'
 
 function getServiceClient() {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     {
       cookies: {
         getAll() { return [] },

@@ -1,8 +1,23 @@
 import { createServerClient } from '@supabase/ssr'
 import { timingSafeEqual } from 'crypto'
 import { NextRequest } from 'next/server'
+import { requireEnv } from '../env'
 
-export async function authenticateApiKey(request: NextRequest): Promise<string | null> {
+export interface ApiKeyAuth {
+  userId: string
+  keyId: string
+}
+
+/**
+ * Verify a `Bearer pk_…` API key against the api_keys table (SHA-256 +
+ * timingSafeEqual) and, on success, return the owning user and the key id.
+ *
+ * This lookup uses the service-role client because it runs *before* we know
+ * which user is calling — the api_keys RLS policy is keyed on auth.uid(), which
+ * isn't established yet. This is a narrow admin lookup only; the caller
+ * (authenticate()) does NOT use a service-role client for the user's data.
+ */
+export async function authenticateApiKey(request: NextRequest): Promise<ApiKeyAuth | null> {
   const authHeader = request.headers.get('authorization')
   if (!authHeader || !authHeader.startsWith('Bearer pk_')) {
     return null
@@ -11,8 +26,8 @@ export async function authenticateApiKey(request: NextRequest): Promise<string |
   const apiKey = authHeader.slice(7) // Remove "Bearer "
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     {
       cookies: {
         getAll() { return [] },
@@ -43,7 +58,7 @@ export async function authenticateApiKey(request: NextRequest): Promise<string |
         .update({ last_used_at: new Date().toISOString() })
         .eq('id', key.id)
 
-      return key.user_id
+      return { userId: key.user_id, keyId: key.id }
     }
   }
 

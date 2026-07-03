@@ -252,6 +252,7 @@ describe('POST /api/tasks', () => {
     const createdTask = { id: 't-full', title: 'Full task', user_id: TEST_USER_ID }
 
     mockAuthWithTables({
+      tags: { data: [{ id: TEST_TAG_ID }], error: null }, // ownership check: tag belongs to caller
       tasks: { data: createdTask, error: null },
       task_tags: [
         { data: null, error: null }, // insert tag_ids
@@ -280,6 +281,24 @@ describe('POST /api/tasks', () => {
     const res = await POST(req)
 
     expect(res.status).toBe(400)
+  })
+
+  it('rejects tag_ids not owned by the caller with 400 (cross-tenant guard)', async () => {
+    const FOREIGN_TAG = '00000000-0000-4000-8000-0000000000ff'
+    const supabase = mockAuthWithTables({
+      // Ownership lookup returns no rows — the tag is not the caller's.
+      tags: { data: [], error: null },
+      tasks: { data: { id: 't-x', title: 'x', user_id: TEST_USER_ID }, error: null },
+    })
+
+    const req = createRequest('POST', '/api/tasks', { title: 'x', tag_ids: [FOREIGN_TAG] })
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.invalid_tag_ids).toEqual([FOREIGN_TAG])
+    // The task must NOT have been inserted when tag ownership fails.
+    expect(supabase.from).not.toHaveBeenCalledWith('tasks')
   })
 
   it('rejects missing title with 400', async () => {

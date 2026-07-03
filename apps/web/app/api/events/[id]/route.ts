@@ -86,11 +86,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   updateFields.updated_at = new Date().toISOString()
 
-  // Update in Supabase
+  // Update in Supabase (RLS-scoped; user_id filter is defense-in-depth)
   const { data: updatedEvent, error: updateError } = await supabase
     .from('events')
     .update(updateFields)
     .eq('id', id)
+    .eq('user_id', userId)
     .select()
     .single()
 
@@ -246,11 +247,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  // Delete from Supabase
+  // Delete from Supabase (RLS-scoped; user_id filter is defense-in-depth)
   const { error: deleteError } = await supabase
     .from('events')
     .delete()
     .eq('id', id)
+    .eq('user_id', userId)
 
   if (deleteError) {
     return NextResponse.json(

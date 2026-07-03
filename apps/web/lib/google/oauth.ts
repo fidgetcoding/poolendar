@@ -1,10 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import type { GoogleAccount } from '@poolendar/types'
+import { requireEnv } from '../env'
+import { encryptToken, decryptToken } from '../crypto'
 
 function getServiceClient() {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     {
       cookies: {
         getAll() { return [] },
@@ -157,8 +159,9 @@ export async function saveGoogleAccount(
       {
         user_id: userId,
         email: tokens.email,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        // Tokens are encrypted at the app layer before they touch the DB.
+        access_token: encryptToken(tokens.access_token),
+        refresh_token: encryptToken(tokens.refresh_token),
         token_expires_at: tokenExpiresAt,
       },
       { onConflict: 'user_id,email' }
@@ -242,8 +245,9 @@ export async function disconnectGoogleAccount(
     .single()
 
   // Best-effort token revocation — don't throw if it fails
-  if (account) {
-    const tokenToRevoke = account.refresh_token ?? account.access_token
+  const storedToken = account?.refresh_token ?? account?.access_token
+  if (storedToken) {
+    const tokenToRevoke = decryptToken(storedToken)
     try {
       await fetch(
         `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tokenToRevoke)}`,

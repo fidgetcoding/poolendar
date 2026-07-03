@@ -38,20 +38,22 @@ v1 non-goals.
 - **API keys stay SHA-256** (fine for 128-bit random keys); TECH.md amended rather than moving to bcrypt.
 - **OAuth architecture:** Supabase Auth = login only. Calendar access exclusively via the dedicated
   Google Connect flow (own client ID/secret, calendar scopes). Never rely on `provider_token`.
-- **Backend is gone (discovered 2026-07-03):** Supabase project `vzrrxslxoflcdrbvtscs` no longer
-  exists (DNS gone, invisible to org — free-tier deletion). Schema fully recoverable from
-  migrations 001-009. Unit tests are DB-mocked so Phases 1-3 proceed; a real backend is required
-  by Phase 4's E2E gate. OPEN DECISION (Nate): new cloud project ($10/mo in org ojarqfhafockrybmozmb)
-  vs local stack (colima + supabase CLI). New project must keep a legacy HS256 JWT secret available
-  (`SUPABASE_JWT_SECRET`) for the Phase 2 API-key→user-JWT auth design.
+- **Cloud footprint is gone (discovered 2026-07-03):** Supabase project `vzrrxslxoflcdrbvtscs` no
+  longer exists (DNS gone, invisible to org) AND Vercel project `prj_avkoGpt9PTSKYTzRCaZA0GR3AJIO`
+  404s. Schema fully recoverable from migrations 001-009. Unit tests are DB-mocked so Phases 1-3
+  proceed; a real backend is required by Phase 4's E2E gate; Phase 7 is full re-provisioning
+  (new Vercel project + Supabase project + Cloudflare DNS to poolendar.com). OPEN DECISION (Nate):
+  new Supabase project ($10/mo in org ojarqfhafockrybmozmb) vs local stack (colima + supabase CLI).
+  New project must keep a legacy HS256 JWT secret available (`SUPABASE_JWT_SECRET`) for the
+  Phase 2 API-key→user-JWT auth design.
 
 ## Phases
 
 | # | Phase | Status |
 |---|-------|--------|
 | 1 | Demolition + spec restore | DONE 2026-07-03 |
-| 2 | Security foundation | in progress |
-| 3 | Resurrect Google sync | pending |
+| 2 | Security foundation | DONE 2026-07-03 |
+| 3 | Resurrect Google sync | in progress |
 | 4 | The Great Rewiring (UI) | pending |
 | 5 | API contract + MCP | pending |
 | 6 | Booking + notifications | pending |

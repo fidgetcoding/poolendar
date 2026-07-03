@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { requireEnv } from './env'
 
 // ---------------------------------------------------------------------------
 // In-memory fallback — defence-in-depth for when Supabase is unreachable.
@@ -24,8 +25,8 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
 // ---------------------------------------------------------------------------
 function getServiceClient() {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     { cookies: { getAll() { return [] }, setAll() {} } }
   )
 }

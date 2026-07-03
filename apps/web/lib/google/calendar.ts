@@ -1,4 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
+import { requireEnv } from '../env'
+import { encryptToken, decryptToken } from '../crypto'
 
 interface GoogleTokens {
   access_token: string
@@ -8,8 +10,8 @@ interface GoogleTokens {
 
 async function getServiceClient() {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     {
       cookies: {
         getAll() { return [] },
@@ -26,9 +28,14 @@ async function refreshTokenIfNeeded(
   const expiresAt = new Date(tokens.token_expires_at)
   const now = new Date()
 
+  // Tokens are stored encrypted at rest — decrypt before use.
+  const accessToken = decryptToken(tokens.access_token)
+
   if (expiresAt.getTime() - now.getTime() > 60000) {
-    return tokens.access_token
+    return accessToken
   }
+
+  const refreshToken = decryptToken(tokens.refresh_token)
 
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -36,7 +43,7 @@ async function refreshTokenIfNeeded(
     body: new URLSearchParams({
       client_id: process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      refresh_token: tokens.refresh_token,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
   })
@@ -51,7 +58,8 @@ async function refreshTokenIfNeeded(
   await supabase
     .from('google_accounts')
     .update({
-      access_token: data.access_token,
+      // Re-encrypt the freshly issued access token before persisting.
+      access_token: encryptToken(data.access_token),
       token_expires_at: new Date(
         Date.now() + data.expires_in * 1000
       ).toISOString(),

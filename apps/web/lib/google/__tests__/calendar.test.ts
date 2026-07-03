@@ -43,6 +43,7 @@ describe('Google Calendar API wrappers', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key'
     process.env.GOOGLE_CLIENT_ID = 'test-client-id'
     process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
+    process.env.GOOGLE_TOKEN_ENC_KEY = Buffer.alloc(32, 7).toString('base64')
 
     const mod = await import('../calendar')
     googleCalendarRequest = mod.googleCalendarRequest

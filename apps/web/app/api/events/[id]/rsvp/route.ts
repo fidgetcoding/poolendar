@@ -43,8 +43,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const userEmail = user?.email?.toLowerCase()
+  // Resolve the caller's email from their profile. auth.getUser() is null for
+  // API-key callers (no session), which previously made RSVP a silent no-op.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId)
+    .single()
+  const userEmail = profile?.email?.toLowerCase()
 
   const attendees: Array<{ email?: string; response?: string }> =
     Array.isArray(event.attendees) ? event.attendees : []
@@ -69,6 +75,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .eq('user_id', userId)
     .select()
     .single()
 
@@ -79,5 +86,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  return NextResponse.json({ id, response: parsed.data.response })
+  return NextResponse.json(updatedEvent)
 }

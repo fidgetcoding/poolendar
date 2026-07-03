@@ -232,6 +232,22 @@ describe('PATCH /api/tasks/:id', () => {
     expect(res.status).toBe(400)
     expect(body.error).toBe('Invalid JSON body')
   })
+
+  it('rejects tag_ids not owned by the caller with 400 (cross-tenant guard)', async () => {
+    const FOREIGN_TAG = '00000000-0000-4000-8000-0000000000ff'
+    mockAuthWithTables({
+      tasks: { data: { id: TEST_TASK_ID, status: 'backlog', user_id: TEST_USER_ID }, error: null },
+      // Ownership lookup returns no rows — the tag is not the caller's.
+      tags: { data: [], error: null },
+    })
+
+    const req = createRequest('PATCH', `/api/tasks/${TEST_TASK_ID}`, { tag_ids: [FOREIGN_TAG] })
+    const res = await PATCH(req, routeParams(TEST_TASK_ID))
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.invalid_tag_ids).toEqual([FOREIGN_TAG])
+  })
 })
 
 // ── DELETE Tests ───────────────────────────────────────────────────────────

@@ -110,7 +110,7 @@ describe('authenticateApiKey', () => {
     const request = buildRequest(`Bearer ${apiKey}`)
     const result = await authenticateApiKey(request)
 
-    expect(result).toBe('user-abc')
+    expect(result).toEqual({ userId: 'user-abc', keyId: 'key-1' })
     // Verify last_used_at was updated
     expect(mockUpdateCall).toHaveBeenCalledWith(
       expect.objectContaining({ last_used_at: expect.any(String) })

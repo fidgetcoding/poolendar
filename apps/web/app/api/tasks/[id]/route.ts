@@ -90,6 +90,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   const { tag_ids, subtasks: _subtasks, ...fields } = parsed.data
 
+  // Cross-tenant guard: every provided tag must belong to the caller before we
+  // touch task_tags. Reject up front so no task fields are mutated on a bad id.
+  if (tag_ids !== undefined && tag_ids.length > 0) {
+    const { data: ownedTags } = await supabase
+      .from('tags')
+      .select('id')
+      .eq('user_id', userId)
+      .in('id', tag_ids)
+    const ownedIds = new Set((ownedTags ?? []).map((t) => t.id))
+    const invalid = tag_ids.filter((tid) => !ownedIds.has(tid))
+    if (invalid.length > 0) {
+      return NextResponse.json(
+        { error: 'One or more tag_ids do not belong to you', invalid_tag_ids: invalid },
+        { status: 400 }
+      )
+    }
+  }
+
   // Handle completed_at transitions
   const updateFields: Record<string, any> = { ...fields }
   if (fields.status !== undefined) {
