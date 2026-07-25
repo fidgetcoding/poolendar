@@ -5,7 +5,7 @@ export async function sendTelegramNotification(
   chatId: string,
   payload: NotificationPayload
 ): Promise<boolean> {
-  const text = `<b>${escapeHtml(payload.title)}</b>\n\n${escapeHtml(payload.body)}${payload.url ? `\n\n<a href="${escapeHtml(payload.url)}">Open in Meowlander</a>` : ''}`
+  const text = `<b>${escapeHtml(payload.title)}</b>\n\n${escapeHtml(payload.body)}${payload.url ? `\n\n<a href="${escapeHtml(payload.url)}">Open in Meowlendar</a>` : ''}`
 
   try {
     const res = await fetch(

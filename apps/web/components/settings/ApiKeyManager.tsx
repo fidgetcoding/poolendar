@@ -79,7 +79,7 @@ export function ApiKeyManager({ apiKeys, onKeysChange }: ApiKeyManagerProps) {
   return (
     <SettingsSection
       title="API Keys"
-      description="Manage API keys for programmatic access to Meowlander"
+      description="Manage API keys for programmatic access to Meowlendar"
     >
       {/* Existing keys */}
       <div className="space-y-2">

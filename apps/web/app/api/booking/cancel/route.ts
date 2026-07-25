@@ -221,11 +221,11 @@ async function readTokenIntent(
 function pageShell(inner: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking - Meowlander</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking - Meowlendar</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f9fafb;color:#1a1a1a">
 <div style="text-align:center;max-width:420px;padding:24px">
 ${inner}
-<p style="margin-top:24px;font-size:13px;color:#999">Meowlander</p>
+<p style="margin-top:24px;font-size:13px;color:#999">Meowlendar</p>
 </div>
 </body>
 </html>`

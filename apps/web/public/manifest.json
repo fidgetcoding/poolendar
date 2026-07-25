@@ -1,6 +1,6 @@
 {
-  "name": "Meowlander",
-  "short_name": "Meowlander",
+  "name": "Meowlendar",
+  "short_name": "Meowlendar",
   "description": "The purrrfect calendar",
   "start_url": "/",
   "scope": "/",

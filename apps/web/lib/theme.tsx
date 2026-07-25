@@ -11,7 +11,7 @@ import {
 export type Theme = 'light' | 'dark'
 
 /** localStorage key; also read by the pre-paint inline script in app/layout.tsx. */
-export const THEME_STORAGE_KEY = 'meowlander-theme'
+export const THEME_STORAGE_KEY = 'meowlendar-theme'
 
 interface ThemeContextValue {
   theme: Theme

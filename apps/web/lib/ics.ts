@@ -92,7 +92,7 @@ export function generateBookingICS(input: ICSEventInput): string {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Meowlander//Booking//EN',
+    'PRODID:-//Meowlendar//Booking//EN',
     'CALSCALE:GREGORIAN',
     `METHOD:${method}`,
     'BEGIN:VEVENT',

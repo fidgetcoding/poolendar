@@ -23,5 +23,5 @@ export async function GET() {
 
   await supabase.auth.signOut()
 
-  return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_APP_URL || 'https://meowlander.com'))
+  return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_APP_URL || 'https://meowlendar.com'))
 }

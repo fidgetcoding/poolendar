@@ -219,7 +219,7 @@ export default function LoginPage() {
             className="text-4xl font-extrabold tracking-tight"
             style={{ color: 'var(--fg)' }}
           >
-            Meow<span style={{ color: 'var(--accent)' }}>lander</span>
+            Meow<span style={{ color: 'var(--accent)' }}>lendar</span>
           </h1>
           <p
             className="mt-2 text-sm tracking-wide"
