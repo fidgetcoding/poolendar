@@ -113,7 +113,7 @@ async function deliver(payload: EmailPayload): Promise<{ sent: boolean; logged: 
   }
 
   const resend = new Resend(key)
-  const from = process.env.RESEND_FROM_EMAIL || 'Poolendar <noreply@poolendar.com>'
+  const from = process.env.RESEND_FROM_EMAIL || 'Meowlander <noreply@meowlander.com>'
   const attachments = payload.ics
     ? [{ filename: 'invite.ics', content: Buffer.from(payload.ics).toString('base64') }]
     : undefined
@@ -170,7 +170,7 @@ export async function sendBookingConfirmationEmail(
     <a href="${escapeHtml(cancel)}" style="display:inline-block;padding:10px 18px;background:#f3f4f6;color:#1a1a1a;border-radius:6px;text-decoration:none;font-size:14px">Cancel</a>
   </p>
   <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0 12px">
-  <p style="font-size:11px;color:#999;margin:0">Poolendar</p>
+  <p style="font-size:11px;color:#999;margin:0">Meowlander</p>
 </body></html>`.trim()
 
   return deliver({
@@ -200,7 +200,7 @@ export async function sendBookingDeclinedEmail(
     <a href="${escapeHtml(`${appUrl()}/book/${link.slug}`)}" style="display:inline-block;padding:10px 18px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none;font-size:14px">Find another time</a>
   </p>
   <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0 12px">
-  <p style="font-size:11px;color:#999;margin:0">Poolendar</p>
+  <p style="font-size:11px;color:#999;margin:0">Meowlander</p>
 </body></html>`.trim()
 
   return deliver({

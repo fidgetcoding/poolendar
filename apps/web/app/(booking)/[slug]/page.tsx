@@ -449,7 +449,7 @@ export default function BookingPage() {
           <div className="mt-6 text-center">
             <p className="text-xs text-[var(--muted)]">
               Powered by{' '}
-              <span className="font-medium text-[var(--fg)]">Poolendar</span>
+              <span className="font-medium text-[var(--fg)]">Meowlander</span>
             </p>
           </div>
         )}

@@ -31,7 +31,7 @@ export function BottomTabBar({ activeTab, onTabChange }: BottomTabBarProps) {
       className={cn(
         'fixed bottom-0 left-0 right-0 z-50',
         'flex items-center justify-around',
-        'border-t border-zinc-800 bg-zinc-900',
+        'border-t border-[var(--border)] bg-[var(--surface)]',
         'md:hidden'
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}

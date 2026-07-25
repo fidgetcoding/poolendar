@@ -1,12 +1,12 @@
 {
-  "name": "Poolendar",
-  "short_name": "Poolendar",
-  "description": "Your personal calendar, perfected.",
+  "name": "Meowlander",
+  "short_name": "Meowlander",
+  "description": "The purrrfect calendar",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#6366f1",
+  "background_color": "#faf8f4",
+  "theme_color": "#f9a825",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

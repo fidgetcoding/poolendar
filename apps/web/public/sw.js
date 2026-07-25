@@ -1,6 +1,6 @@
 // Push notification handler
 self.addEventListener('push', (event) => {
-  const data = event.data?.json() ?? { title: 'Poolendar', body: 'You have a notification' }
+  const data = event.data?.json() ?? { title: 'Meowlander', body: 'You have a notification' }
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
@@ -26,8 +26,10 @@ self.addEventListener('notificationclick', (event) => {
   )
 })
 
-// Basic offline caching (app shell)
-const CACHE_NAME = 'poolendar-v2'
+// Basic offline caching (app shell). Bumping CACHE_NAME purges every older
+// cache on activate — required whenever bundled CSS/JS changes shape (e.g.
+// the Meowlander rebrand: stale poolendar-v2 kept serving the dark-only CSS).
+const CACHE_NAME = 'meowlander-v3'
 const PRECACHE = ['/', '/manifest.json']
 
 self.addEventListener('install', (event) => {
@@ -57,8 +59,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Cache-first for static assets (images, fonts, JS/CSS bundles)
-  if (url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|webp|woff2?|ico)$/)) {
+  // Cache-first for immutable media (images, fonts). JS/CSS deliberately
+  // fall through to network-first below: cache-first bundles served stale
+  // UI after every redesign, and in dev it fights HMR.
+  if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?|ico)$/)) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached

@@ -30,7 +30,7 @@ function buildHtml(payload: NotificationPayload): string {
   const safeTitle = escapeHtml(payload.title)
   const safeBody = escapeHtml(payload.body)
   const cta = payload.url
-    ? `<p style="margin-top:16px"><a href="${sanitizeUrl(payload.url)}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none;font-size:14px">Open in Poolendar</a></p>`
+    ? `<p style="margin-top:16px"><a href="${sanitizeUrl(payload.url)}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none;font-size:14px">Open in Meowlander</a></p>`
     : ''
 
   return `
@@ -42,7 +42,7 @@ function buildHtml(payload: NotificationPayload): string {
   <p style="margin:0;font-size:14px;color:#555;line-height:1.6">${safeBody}</p>
   ${cta}
   <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0 12px">
-  <p style="font-size:11px;color:#999;margin:0">Poolendar Notifications</p>
+  <p style="font-size:11px;color:#999;margin:0">Meowlander Notifications</p>
 </body>
 </html>`.trim()
 }
@@ -53,7 +53,7 @@ export async function sendEmailNotification(
 ): Promise<boolean> {
   try {
     const { error } = await getResend().emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'Poolendar <noreply@poolendar.com>',
+      from: process.env.RESEND_FROM_EMAIL || 'Meowlander <noreply@meowlander.com>',
       to,
       subject: payload.title,
       html: buildHtml(payload),

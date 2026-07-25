@@ -4,6 +4,24 @@ import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { NotificationListener } from '@/components/NotificationListener'
+import { ThemeProvider, useTheme } from '@/lib/theme'
+
+function ThemedToaster() {
+  const { theme } = useTheme()
+  return (
+    <Toaster
+      theme={theme}
+      position="bottom-right"
+      toastOptions={{
+        style: {
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          color: 'var(--fg)',
+        },
+      }}
+    />
+  )
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -23,20 +41,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-      <NotificationListener />
-      <Toaster
-        theme="dark"
-        position="bottom-right"
-        toastOptions={{
-          style: {
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--fg)',
-          },
-        }}
-      />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        {children}
+        <NotificationListener />
+        <ThemedToaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 }

@@ -12,3 +12,6 @@ test-results/
 playwright-report/
 .playwright/
 e2e/.auth/
+
+# macOS
+.DS_Store

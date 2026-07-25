@@ -99,7 +99,7 @@ export function AccountTab({
         <p className="text-xs text-[var(--muted)]">
           Your booking page URL:{' '}
           <span className="text-[var(--accent)]">
-            {username || 'username'}.poolendar.com
+            {username || 'username'}.meowlander.com
           </span>
         </p>
         <Input

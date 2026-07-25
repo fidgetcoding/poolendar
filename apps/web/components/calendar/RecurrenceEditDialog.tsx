@@ -141,7 +141,7 @@ export function RecurrenceEditDialog({
         aria-label={headingLabel}
         className={cn(
           'relative w-full max-w-[420px] mx-4',
-          'bg-zinc-900 border border-zinc-800',
+          'bg-[var(--surface)] border border-[var(--border)]',
           'rounded-xl shadow-2xl shadow-black/60',
           'animate-in fade-in-0 zoom-in-95 duration-150'
         )}
@@ -152,7 +152,7 @@ export function RecurrenceEditDialog({
             {isDelete && (
               <AlertTriangle size={18} className="text-red-400 shrink-0" />
             )}
-            <h2 className="text-base font-semibold text-zinc-100">
+            <h2 className="text-base font-semibold text-[var(--fg)]">
               {headingLabel}
             </h2>
           </div>
@@ -161,8 +161,8 @@ export function RecurrenceEditDialog({
             onClick={onClose}
             className={cn(
               'flex items-center justify-center w-7 h-7 rounded-md',
-              'text-zinc-400 hover:text-zinc-200',
-              'hover:bg-zinc-800',
+              'text-[var(--muted)] hover:text-[var(--fg)]',
+              'hover:bg-[var(--surface-hover)]',
               'transition-colors duration-150'
             )}
           >
@@ -172,7 +172,7 @@ export function RecurrenceEditDialog({
 
         {/* Item title */}
         <div className="px-5 pb-4">
-          <p className="text-sm text-zinc-400 truncate">
+          <p className="text-sm text-[var(--muted)] truncate">
             {itemTitle}
           </p>
         </div>
@@ -187,7 +187,7 @@ export function RecurrenceEditDialog({
                   'border transition-colors duration-150',
                   selected === opt.value
                     ? 'border-amber-500/50 bg-amber-500/5'
-                    : 'border-transparent hover:bg-zinc-800/50'
+                    : 'border-transparent hover:bg-[var(--surface-hover)]'
                 )}
               >
                 <input
@@ -198,10 +198,10 @@ export function RecurrenceEditDialog({
                   className="mt-0.5 accent-amber-500"
                 />
                 <div className="min-w-0">
-                  <span className="text-sm font-medium text-zinc-200">
+                  <span className="text-sm font-medium text-[var(--fg)]">
                     {opt.label}
                   </span>
-                  <p className="text-xs text-zinc-500 mt-0.5">
+                  <p className="text-xs text-[var(--muted)] mt-0.5">
                     {opt.description}
                   </p>
                 </div>
@@ -226,8 +226,8 @@ export function RecurrenceEditDialog({
                             'flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-pointer',
                             'transition-colors duration-150',
                             checked
-                              ? 'bg-zinc-800'
-                              : 'hover:bg-zinc-800/50'
+                              ? 'bg-[var(--surface-hover)]'
+                              : 'hover:bg-[var(--surface-hover)]'
                           )}
                         >
                           <input
@@ -236,14 +236,14 @@ export function RecurrenceEditDialog({
                             onChange={() => toggleCustomDate(dateStr)}
                             className="accent-amber-500"
                           />
-                          <span className="text-xs text-zinc-300">
+                          <span className="text-xs text-[var(--fg)]">
                             {displayDate}
                           </span>
                         </label>
                       )
                     })
                   ) : (
-                    <p className="text-xs text-zinc-500 italic px-2.5 py-1.5">
+                    <p className="text-xs text-[var(--muted)] italic px-2.5 py-1.5">
                       No upcoming occurrence dates available
                     </p>
                   )}
@@ -254,14 +254,14 @@ export function RecurrenceEditDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-zinc-800">
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[var(--border)]">
           <button
             type="button"
             onClick={onClose}
             className={cn(
               'px-4 py-2 rounded-lg text-sm font-medium',
-              'text-zinc-400 hover:text-zinc-200',
-              'hover:bg-zinc-800',
+              'text-[var(--muted)] hover:text-[var(--fg)]',
+              'hover:bg-[var(--surface-hover)]',
               'transition-colors duration-150'
             )}
           >

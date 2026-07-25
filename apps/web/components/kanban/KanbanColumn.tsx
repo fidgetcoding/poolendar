@@ -70,7 +70,7 @@ export function KanbanColumn({
       style={{
         backgroundColor: isOver
           ? 'rgba(249, 168, 37, 0.04)'
-          : 'rgba(20, 20, 20, 0.5)',
+          : 'var(--surface-translucent)',
         border: isOver
           ? '1px solid rgba(249, 168, 37, 0.2)'
           : '1px solid transparent',

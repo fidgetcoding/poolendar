@@ -6,11 +6,14 @@ import {
   CalendarDays,
   CalendarClock,
   Clock,
+  Moon,
   Settings,
+  Sun,
   ChevronsLeft,
   ChevronsRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/lib/theme'
 
 interface SidebarRibbonProps {
   activePanel: 'tasks' | 'calendar' | 'booking' | 'schedules' | null
@@ -69,6 +72,35 @@ function Tooltip({
         </div>
       )}
     </div>
+  )
+}
+
+function ThemeToggleButton({ isExpanded }: { isExpanded: boolean }) {
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
+  const label = isDark ? 'Light mode' : 'Dark mode'
+  const Icon = isDark ? Sun : Moon
+
+  return (
+    <Tooltip label={label} visible={!isExpanded}>
+      <button
+        type="button"
+        onClick={toggleTheme}
+        aria-label={label}
+        className={cn(
+          'relative flex items-center gap-3 rounded-md',
+          'text-[var(--muted)] transition-colors duration-150',
+          'hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+          isExpanded ? 'h-10 px-3' : 'h-12 w-10 justify-center'
+        )}
+      >
+        <Icon className="h-5 w-5 shrink-0" />
+        {isExpanded && (
+          <span className="truncate text-sm font-medium">{label}</span>
+        )}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -141,6 +173,8 @@ export function SidebarRibbon({
 
       <div className="flex flex-col gap-0.5 pb-2 px-1">
         <div className="mx-2 mb-1 border-t border-[var(--border)]" />
+
+        <ThemeToggleButton isExpanded={isExpanded} />
 
         <Tooltip label="Settings" visible={!isExpanded}>
           <button

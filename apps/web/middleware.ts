@@ -45,7 +45,11 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/booking/book') ||
     pathname.startsWith('/api/webhooks') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    // PWA assets must load without a session: the browser fetches them
+    // credential-less, and a redirect to /login breaks SW registration.
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js'
 
   // API routes get their own auth handling via the authenticate() helper
   const isApiRoute = pathname.startsWith('/api/')

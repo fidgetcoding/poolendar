@@ -2,17 +2,132 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Moon, Sun } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { useTheme } from '@/lib/theme'
 
-const FLOATERS = Array.from({ length: 10 }, (_, i) => ({
+// Floating paw prints drifting up the screen (deterministic layout).
+const PAW_FLOATERS = Array.from({ length: 10 }, (_, i) => ({
   id: i,
-  size: 18 + ((i * 7 + 3) % 24),
+  size: 16 + ((i * 7 + 3) % 20),
   left: ((i * 17 + 5) % 86) + 7,
   delay: (i * 1.7) % 12,
   duration: 14 + ((i * 3 + 2) % 10),
 }))
+
+// The cat parade. One emoji, many breeds: CSS filters turn the tabby into
+// grey, white, and cream cats. Negative delays start everyone mid-stroll.
+// `reverse` walks right-to-left; 🐈 faces left natively, so left-to-right
+// walkers get flipped.
+const CAT_WALKERS = [
+  { id: 'tabby', emoji: '🐈', size: 42, bottom: '2%', duration: 26, delay: -2, reverse: false, filter: undefined },
+  { id: 'black', emoji: '🐈‍⬛', size: 36, bottom: '7%', duration: 34, delay: -12, reverse: true, filter: undefined },
+  { id: 'grey', emoji: '🐈', size: 28, bottom: '11%', duration: 22, delay: -5, reverse: false, filter: 'grayscale(1) brightness(1.15)' },
+  { id: 'white', emoji: '🐈', size: 50, bottom: '0%', duration: 42, delay: -20, reverse: true, filter: 'grayscale(1) brightness(1.7)' },
+  { id: 'cream', emoji: '🐈', size: 24, bottom: '15%', duration: 18, delay: -9, reverse: false, filter: 'sepia(0.9) saturate(0.5)' },
+]
+
+function CatParade() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 select-none overflow-hidden"
+      aria-hidden="true"
+    >
+      {PAW_FLOATERS.map((f) => (
+        <div
+          key={f.id}
+          className="absolute animate-float"
+          style={{
+            fontSize: f.size,
+            left: `${f.left}%`,
+            bottom: '-8%',
+            animationDelay: `${f.delay}s`,
+            animationDuration: `${f.duration}s`,
+          }}
+        >
+          🐾
+        </div>
+      ))}
+
+      {CAT_WALKERS.map((cat) => (
+        <div
+          key={cat.id}
+          className="cat-walker"
+          style={{
+            bottom: cat.bottom,
+            fontSize: cat.size,
+            animationDuration: `${cat.duration}s`,
+            animationDelay: `${cat.delay}s`,
+            animationDirection: cat.reverse ? 'reverse' : 'normal',
+          }}
+        >
+          <span
+            className="inline-block"
+            style={{
+              transform: cat.reverse ? undefined : 'scaleX(-1)',
+              filter: cat.filter,
+            }}
+          >
+            <span className="cat-gait">{cat.emoji}</span>
+          </span>
+        </div>
+      ))}
+
+      {/* Yarn chase: ball rolls ahead, kitten pounces after it. */}
+      <div
+        className="cat-walker"
+        style={{
+          bottom: '4%',
+          animationDuration: '15s',
+          animationDelay: '-4s',
+        }}
+      >
+        <span className="flex items-end gap-4">
+          <span className="inline-block" style={{ transform: 'scaleX(-1)' }}>
+            <span className="cat-pounce text-[32px]">🐈</span>
+          </span>
+          <span className="yarn-roll mb-1 text-[22px]">🧶</span>
+        </span>
+      </div>
+
+      {/* Grooming cat in the corner, licking its fresh catch. */}
+      <div className="absolute bottom-8 right-10 hidden sm:block">
+        <div className="relative">
+          <span className="cat-head-bob text-[42px]">🐱</span>
+          <span className="cat-tongue" style={{ left: 16, top: 36 }} />
+          <span
+            className="absolute text-[20px]"
+            style={{ left: -4, top: 44, transform: 'rotate(-18deg)' }}
+          >
+            🐟
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="absolute right-4 top-4 z-20 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+      style={{
+        borderColor: 'var(--border)',
+        background: 'var(--surface-translucent)',
+        color: 'var(--muted)',
+      }}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  )
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -76,73 +191,53 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      className="relative flex min-h-screen items-center justify-center overflow-hidden px-4"
-      style={{
-        background:
-          'linear-gradient(145deg, #1a0f08 0%, #0a0a0a 50%, #0d0806 100%)',
-      }}
-    >
-      {FLOATERS.map((f) => (
-        <div
-          key={f.id}
-          className="pointer-events-none absolute select-none animate-float"
-          style={{
-            fontSize: f.size,
-            left: `${f.left}%`,
-            bottom: '-8%',
-            animationDelay: `${f.delay}s`,
-            animationDuration: `${f.duration}s`,
-          }}
-          aria-hidden="true"
-        >
-          💩
-        </div>
-      ))}
+    <div className="login-scene relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <CatParade />
+      <ThemeToggle />
 
       <div
         className="pointer-events-none absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full"
         style={{
           background:
-            'radial-gradient(circle, rgba(249,168,37,0.08) 0%, rgba(139,105,20,0.04) 40%, transparent 70%)',
+            'radial-gradient(circle, rgba(249,168,37,0.10) 0%, rgba(139,105,20,0.05) 40%, transparent 70%)',
         }}
         aria-hidden="true"
       />
 
       <div className="relative z-10 w-full max-w-sm animate-fade-in-up">
         <div className="mb-10 text-center">
-          <div className="poop-logo relative mx-auto mb-5 inline-block overflow-hidden rounded-full">
+          <div className="cat-logo relative mx-auto mb-5 inline-block overflow-hidden rounded-full">
             <div
               className="animate-pulse-glow absolute inset-0 rounded-full"
               aria-hidden="true"
             />
             <span className="relative inline-block text-[64px] leading-none sm:text-[80px] drop-shadow-[0_4px_24px_rgba(249,168,37,0.25)]">
-              💩
+              🐱
             </span>
           </div>
           <h1
             className="text-4xl font-extrabold tracking-tight"
             style={{ color: 'var(--fg)' }}
           >
-            Pool<span style={{ color: 'var(--accent)' }}>endar</span>
+            Meow<span style={{ color: 'var(--accent)' }}>lander</span>
           </h1>
           <p
             className="mt-2 text-sm tracking-wide"
             style={{ color: 'var(--muted)' }}
           >
-            The fully jailbroken calendar
+            The purrrfect calendar
           </p>
         </div>
 
         <div
           className="rounded-2xl p-6"
           style={{
-            background: 'rgba(25, 18, 10, 0.55)',
+            background: 'var(--surface-translucent)',
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
-            border: '1px solid rgba(249, 168, 37, 0.12)',
+            border: '1px solid rgba(249, 168, 37, 0.25)',
             boxShadow:
-              '0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset, 0 1px 0 rgba(255,255,255,0.05) inset',
+              '0 8px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.03) inset, 0 1px 0 rgba(255,255,255,0.05) inset',
           }}
         >
           <button
@@ -180,14 +275,14 @@ export default function LoginPage() {
           <div className="my-6 flex items-center gap-3">
             <div
               className="h-px flex-1"
-              style={{ background: 'rgba(249,168,37,0.15)' }}
+              style={{ background: 'rgba(249,168,37,0.25)' }}
             />
             <span className="text-xs" style={{ color: 'var(--muted)' }}>
               or
             </span>
             <div
               className="h-px flex-1"
-              style={{ background: 'rgba(249,168,37,0.15)' }}
+              style={{ background: 'rgba(249,168,37,0.25)' }}
             />
           </div>
 
@@ -285,6 +380,8 @@ export default function LoginPage() {
           <span>📋 Tasks</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>📱 Push alerts</span>
+          <span style={{ opacity: 0.4 }}>·</span>
+          <span>🧶 Nine lives</span>
         </div>
       </div>
     </div>

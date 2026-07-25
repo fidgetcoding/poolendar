@@ -15,7 +15,7 @@ const testSchema = z.object({
 
 const TEST_PAYLOAD: NotificationPayload = {
   title: 'Test Notification',
-  body: 'This is a test notification from Poolendar. If you see this, your notification channel is working.',
+  body: 'This is a test notification from Meowlander. If you see this, your notification channel is working.',
   event: 'reminder',
   url: '/',
 }
