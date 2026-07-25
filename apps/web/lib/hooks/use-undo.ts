@@ -1,6 +1,18 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { toast } from 'sonner'
+
+/**
+ * A failed mutation used to be swallowed by a bare `.catch(rollback)`: the
+ * optimistic UI reverted with no log and no message, so a create that never
+ * landed looked identical to one that did. Surface it instead.
+ */
+function reportOperationFailure(op: { type: string; entityType: string }, err: unknown) {
+  const detail = err instanceof Error ? err.message : String(err)
+  console.error(`[undo] ${op.type} ${op.entityType} failed:`, err)
+  toast.error(`Could not ${op.type} that ${op.entityType}.`, { description: detail })
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,8 +115,9 @@ export function useUndo(gracePeriodMs = 30_000) {
         // Grace period: delay execution, allow cancel
         const timeoutId = setTimeout(() => {
           pendingRef.current.delete(op.id)
-          op.execute().catch(() => {
+          op.execute().catch((err) => {
             // Execution failed — roll back the optimistic UI
+            reportOperationFailure(op, err)
             op.rollback()
           })
           // Move to undo stack after execution
@@ -115,7 +128,8 @@ export function useUndo(gracePeriodMs = 30_000) {
         pendingRef.current.set(op.id, { operation: op, timeoutId })
       } else {
         // Non-destructive: execute immediately
-        op.execute().catch(() => {
+        op.execute().catch((err) => {
+          reportOperationFailure(op, err)
           op.rollback()
         })
         pushToStack(undoStackRef.current, op)

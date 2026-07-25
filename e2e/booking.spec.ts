@@ -20,8 +20,31 @@ test.describe('external booking page (#57b)', () => {
     await expect(page.getByText(SEED.bookingLinkName)).toBeVisible()
     await expect(page.getByText(/30 min/i)).toBeVisible()
 
-    // Pick the first selectable (available, future) day in the month grid.
-    const dayButton = page.locator('button[aria-label*=", 20"]:not([disabled])').first()
+    // Pick a selectable day that is NOT today. Taking the first selectable day
+    // meant always taking today, whose slot count shrinks with the wall clock:
+    // the seeded window is 09:00–17:00 local, so by late afternoon only one or
+    // two 30-minute slots remain and after 16:30 there are none at all. Each
+    // successful run also books one of those remaining slots, so parallel
+    // workers starved each other. The result was a test that failed by time of
+    // day rather than by regression. Any future day still has the full window.
+    const todayLabel = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/New_York',
+    }).format(new Date())
+
+    const futureDay = `button[aria-label*=", 20"]:not([disabled]):not([aria-label="${todayLabel}"])`
+    let dayButton = page.locator(futureDay).first()
+
+    // If today is the last day of the month there is no future day in this
+    // grid — roll forward and take the first selectable day of the next month.
+    if ((await page.locator(futureDay).count()) === 0) {
+      await page.getByRole('button', { name: 'Next month' }).click()
+      dayButton = page.locator(futureDay).first()
+    }
+
     await dayButton.waitFor({ state: 'visible' })
     await dayButton.click()
 

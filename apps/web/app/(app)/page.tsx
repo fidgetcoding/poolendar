@@ -109,7 +109,10 @@ export default function AppPage() {
       due_date: string | null
       board: TaskBoard
     }) => {
-      if (!userId) return
+      // No userId gate here on purpose. This used to `return` when the profile
+      // query hadn't resolved, which silently threw the task away — the form
+      // closed, the input cleared, and nothing was created or reported.
+      // useCreateTask resolves the owner from the auth session when it's null.
       undoable.createTask({
         user_id: userId,
         calendar_id: null,

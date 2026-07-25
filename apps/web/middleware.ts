@@ -3,17 +3,33 @@ import { createClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || ''
-  const subdomain = hostname.split('.')[0] ?? ''
+  // Strip the port before any host analysis. Leaving it on made `localhost:3000`
+  // need a startsWith hack, and it never saved `127.0.0.1:3000` at all — the
+  // IP's own dots satisfied the old `hostname.includes('.')` test, so every
+  // loopback-by-IP request was misread as a booking subdomain and rewritten
+  // into a 404. Playwright targets 127.0.0.1, so that took the whole E2E suite
+  // down with it.
+  const host = (hostname.split(':')[0] ?? '').toLowerCase()
+  const labels = host.split('.')
+  const subdomain = labels[0] ?? ''
+
+  // An IP literal is a host, never a booking namespace.
+  const isIpLiteral = /^\d+(\.\d+)*$/.test(host)
+  // A booking namespace needs an actual subdomain label in front of a
+  // registrable domain: `nate.poolendar.com` yes, `poolendar.com` and bare
+  // `localhost` no. `nate.localhost` is allowed so subdomains stay testable
+  // locally.
+  const hasSubdomainLabel =
+    labels.length > 2 || (labels.length === 2 && labels[1] === 'localhost')
 
   // Subdomain routing for booking pages
   // If subdomain is not the app itself, treat it as a booking page namespace
   const isBookingSubdomain =
+    !isIpLiteral &&
+    hasSubdomainLabel &&
     subdomain !== 'app' &&
     subdomain !== 'www' &&
-    subdomain !== 'poolendar' &&
-    subdomain !== 'localhost' &&
-    !subdomain.startsWith('localhost:') &&
-    hostname.includes('.')
+    subdomain !== 'poolendar'
 
   if (isBookingSubdomain) {
     const url = request.nextUrl.clone()

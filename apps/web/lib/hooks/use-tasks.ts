@@ -30,9 +30,17 @@ type TaskListFilters = {
 
 export type CreateTaskInput = Omit<
   Task,
-  'id' | 'created_at' | 'updated_at' | 'subtasks' | 'tags' | 'children'
+  'id' | 'created_at' | 'updated_at' | 'subtasks' | 'tags' | 'children' | 'user_id'
 > & {
   tag_ids?: string[]
+  /**
+   * Optional. Callers that already have the profile loaded can pass it; when
+   * omitted or null the mutation resolves the owner from the auth session.
+   * Callers used to read this off the async profile query and silently drop
+   * the whole create if it hadn't resolved yet — the session is authoritative
+   * and always available, so it is the safer source.
+   */
+  user_id?: string | null
 }
 
 export type UpdateTaskInput = {
@@ -152,7 +160,22 @@ export function useCreateTask() {
 
   return useMutation({
     mutationFn: async (input: CreateTaskInput): Promise<Task> => {
-      const { tag_ids, ...taskData } = input
+      const { tag_ids, user_id, ...rest } = input
+
+      // Resolve the owner from the auth session when the caller didn't supply
+      // one. Never drop the create just because a profile query is in flight.
+      let ownerId = user_id ?? null
+      if (!ownerId) {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
+        if (authError) throw authError
+        if (!user) throw new Error('Not authenticated')
+        ownerId = user.id
+      }
+
+      const taskData = { ...rest, user_id: ownerId }
 
       const { data: task, error } = await supabase
         .from('tasks')
@@ -200,6 +223,10 @@ export function useCreateTask() {
       const { tag_ids: _tag_ids, ...taskData } = input
       const optimistic: Task = {
         ...taskData,
+        // The caller may not have the owner id yet (mutationFn resolves it from
+        // the session). This placeholder never reaches the server and is
+        // replaced by the real row on settle; nothing renders off user_id.
+        user_id: taskData.user_id ?? '',
         id: tempId,
         subtasks: [],
         tags: [],
