@@ -11,6 +11,9 @@ importers:
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.61.1
+      '@supabase/supabase-js':
+        specifier: ^2.49.4
+        version: 2.108.1
       turbo:
         specifier: ^2.5.0
         version: 2.9.18
