@@ -1,5 +1,5 @@
 {
-  "name": "poolendar",
+  "name": "meowlendar",
   "private": true,
   "scripts": {
     "dev": "turbo dev",
