@@ -11,7 +11,7 @@ Greenfield Next.js 14+ web app. No existing codebase — all architecture decisi
 - **Cloudflare** — DNS, wildcard subdomain routing for booking pages
 
 **Reference implementations studied:**
-- DreamTeams kanban (`~/code/lorecraft/DREAMTEAMS-MAIN/taskboard/`) — @dnd-kit, fractional positioning, Current/Future boards, Supabase realtime
+- A prior kanban build — @dnd-kit, fractional positioning, Current/Future boards, Supabase realtime
 - cal.diy (MIT fork of Cal.com) — booking page patterns, availability pooling, embed code
 
 **Key libraries:**
